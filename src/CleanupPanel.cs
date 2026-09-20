@@ -61,26 +61,14 @@ public sealed partial class MainWindow
     bool _clnPadTurned;
 
     /// <summary>
-    /// Разметка КАК ЕЁ ОТДАЛА МОДЕЛЬ, до запаса, и рамки, по которым её
-    /// считали. Нужна, чтобы колесо меняло запас сразу: запас — это рост от
-    /// найденных букв, а сами буквы от него не зависят, и гонять ради них
-    /// модель заново незачем.
-    ///
-    /// Живёт ровно до следующей правки: любой мазок, откат, дорисовка или
-    /// заливка её обнуляют. Пересчитывать поверх чужих правок нельзя — они бы
-    /// молча пропали.
+    /// Колесо запаса крутят заходами: снимок под откат берётся на первом
+    /// щелчке, дальше заход идёт поверх него. Любое другое действие заход
+    /// закрывает.
     /// </summary>
-    byte[]? _clnRaw;
-    List<SKRectI>? _clnRawBoxes;
-    bool _clnRawBlock;
+    bool _clnPadRun;
 
-    /// <summary>
-    /// Что человек поправил кистью поверх разметки: 0 — не трогал, EditAdd —
-    /// дорисовал, EditCut — стёр. Без этого слоя первый же мазок обрывал бы
-    /// связь с моделью, и запас переставал шевелиться.
-    /// </summary>
-    byte[]? _clnEdit;
-    const byte EditAdd = 1, EditCut = 2;
+    /// <summary>Каким запас был до последнего сдвига — чтобы знать, насколько сдвинули.</summary>
+    int _clnPadWas;
 
     /// <summary>
     /// Идёт фоновый шаг. Отдельным полем, а не только состоянием кнопок:
@@ -187,13 +175,17 @@ public sealed partial class MainWindow
 
         CleanPad.Value = Math.Clamp(SettingsStore.Current.MaskPad,
                                     (int)CleanPad.Minimum, (int)CleanPad.Maximum);
+        _clnPadWas = (int)CleanPad.Value;
         UpdatePadLabel();
         CleanPad.ValueChanged += (_, __) =>
         {
-            SettingsStore.Current.MaskPad = (int)CleanPad.Value;
+            var now = (int)CleanPad.Value;
+            var delta = now - _clnPadWas;
+            _clnPadWas = now;
+            SettingsStore.Current.MaskPad = now;
             UpdatePadLabel();
             SettingsStore.Touch();
-            ApplyPad(live: true);
+            Swell(delta);
         };
         CleanScroll.ViewChanged += (_, __) => UpdateCursor();
         CleanStack.PointerExited += (_, __) => { _clnCurX = -1; UpdateCursor(); };
@@ -328,68 +320,47 @@ public sealed partial class MainWindow
             : $"Запас вокруг букв: {(int)CleanPad.Value} px (Q + колесо)";
 
     /// <summary>
-    /// Разложить запомненную разметку с ТЕКУЩИМ запасом.
+    /// Раздуть или поджать САМУ разметку на сколько сдвинулся ползунок.
     ///
-    /// live — пришло от колеса. Тогда пересчитываем, только если выбрано ровно
-    /// то, что размечали последним: колесо правит эту разметку, а не какую
-    /// придётся. Сразу после самой разметки выбор проверять нечего — там
-    /// force.
+    /// Не пересчёт «от того, что дала модель», а правка того, что есть сейчас:
+    /// растёт и дорисованное кистью, поджимается тоже всё вместе. Поэтому
+    /// колесо работает всегда — после мазка, после отката, на разметке,
+    /// нарисованной целиком от руки, где никакой модели за спиной и не было.
+    ///
+    /// Плата за это — необратимость: раздуть на пять и поджать обратно даёт не
+    /// исходное, а на 4,6 % больше (замерено). Лишнее набегает там, где соседние
+    /// штрихи слиплись и разлепить их уже нечем. НЕ теряется при этом ничего:
+    /// поджатие не съедает то, что было размечено до раздувания.
+    ///
+    /// Область та же, что у всех действий панели: выбран блок — только он,
+    /// не выбран — вся разметка.
     /// </summary>
-    void ApplyPad(bool live = false)
+    void Swell(int delta)
     {
-        var pad = (int)CleanPad.Value;
+        if (delta == 0 || _clnMask is null || _clnWork is null) return;
+
         var has = _clnSel >= 0 && _clnSel < _clnBoxes.Count;
+        var box = has ? _clnBoxes[_clnSel]
+                      : new SKRectI(0, 0, _clnWork.Width, _clnWork.Height);
 
-        if (_clnRaw is null || _clnRawBoxes is null || _clnMask is null || _clnWork is null
-            || (live && (_clnRawBlock != has
-                         || (has && _clnBoxes[_clnSel] != _clnRawBoxes[0]))))
+        // Один снимок на весь заход колеса, а не на каждый щелчок: иначе
+        // двадцать щелчков вытеснили бы из стопки всё остальное
+        if (!_clnPadRun)
         {
-            // Молча ничего не делать нельзя: человек крутит колесо и ждёт,
-            // что разметка поедет. Говорим, почему не поехала
-            if (live && _clnMask is not null)
-                CleanStatus.Text = $"Запас {pad} px — ляжет при следующей разметке: "
-                                 + "эту считать уже не от чего.";
-            return;
+            Push(new CleanStep { What = "запас вокруг букв", Mask = (byte[])_clnMask.Clone() });
+            _clnPadRun = true;
         }
-        var w = _clnWork.Width;
 
-        foreach (var b in _clnRawBoxes)
-        {
-            var bw = b.Width;
-            var bh = b.Height;
-            if (bw < 1 || bh < 1) continue;
-
-            // Кусок растёт ВНУТРИ своей рамки — как и при самой разметке,
-            // иначе запас склеил бы соседние надписи
-            var part = new byte[bw * bh];
-            for (var y = 0; y < bh; y++)
-                for (var x = 0; x < bw; x++)
-                    part[y * bw + x] = _clnRaw[(b.Top + y) * w + b.Left + x];
-
-            TextMask.Grow(part, bw, bh, pad);
-
-            // Правка руки сильнее любого запаса: дорисовал — значит там буква,
-            // стёр — значит там её нет, и расти туда нечего
-            for (var y = 0; y < bh; y++)
-            {
-                var row = (b.Top + y) * w + b.Left;
-                for (var x = 0; x < bw; x++)
-                {
-                    var v = part[y * bw + x] != 0 ? (byte)255 : (byte)0;
-                    var e = _clnEdit?[row + x] ?? 0;
-                    if (e == EditAdd) v = 255;
-                    else if (e == EditCut) v = 0;
-                    _clnMask[row + x] = v;
-                }
-            }
-        }
+        TextMask.Swell(_clnMask, _clnWork.Width, _clnWork.Height,
+                       box, Math.Abs(delta), delta > 0);
 
         RedrawOverlay();
         UpdateBlockInfo();
-        if (live)
-            CleanStatus.Text = pad < 1
-                ? "Запас убран — разметка как у модели."
-                : $"Запас {pad} px, разметка пересчитана. {Lit()} px под стирание.";
+        // В строке — не шаг, а куда пришли: колесо шлёт щелчки пачкой, и
+        // «раздута на 1 px» после десяти щелчков сбивает с толку
+        CleanStatus.Text = $"Запас {(int)CleanPad.Value} px{(has ? " в блоке" : "")}: разметка "
+                         + (delta > 0 ? "раздута" : "поджата")
+                         + $". {Lit()} px под стирание.";
     }
 
     void UpdateBrushLabel() =>
@@ -472,7 +443,6 @@ public sealed partial class MainWindow
         _clnWork = null;
         _clnPage = null;
         _clnMask = null;
-        ForgetRaw();
         _clnBoxes = new List<SKRectI>();
         _clnSel = -1;
         _clnUndo.Clear();
@@ -510,7 +480,6 @@ public sealed partial class MainWindow
         _clnWork?.Dispose();
         _clnWork = _clnPage.Copy();
         _clnMask = null;
-        ForgetRaw();
         _clnBoxes = new List<SKRectI>();
         _clnSel = -1;
         _clnUndo.Clear();
@@ -557,10 +526,10 @@ public sealed partial class MainWindow
 
     void Push(CleanStep step)
     {
-        // Смена набора рамок обрывает связь с моделью: разметка считалась по
-        // прежним. Правки САМОЙ разметки её не обрывают — мазок кистью ложится
-        // в слой правок, и запас продолжает работать поверх него
-        if (step.Boxes is not null) ForgetRaw();
+        // Любая запись закрывает заход колесом: следующий щелчок положит под
+        // откат свой снимок. Свою запись Swell ставит первой, а признак —
+        // после неё, и потому заход переживает собственный Push
+        _clnPadRun = false;
 
         _clnDirty = true;
         Stack(_clnUndo, step);
@@ -581,22 +550,8 @@ public sealed partial class MainWindow
     /// не меняет — вот по этому признаку отмена и переходит на шаг целиком,
     /// вместо того чтобы молча стоять на месте.
     /// </param>
-    /// <summary>
-    /// Забыть разметку модели и правки поверх неё: дальше запас считать не от
-    /// чего, и колесо будет только менять число.
-    /// </summary>
-    void ForgetRaw()
-    {
-        _clnRaw = null;
-        _clnRawBoxes = null;
-        _clnEdit = null;
-    }
-
     CleanStep Apply(CleanStep s, out bool changed)
     {
-        // Откат и возврат меняют разметку мимо Push — связь с моделью рвётся
-        ForgetRaw();
-
         var back = new CleanStep { What = s.What, Clip = s.Clip };
         changed = false;
 
@@ -749,7 +704,6 @@ public sealed partial class MainWindow
                 _clnBoxes = found;
                 _clnSel = -1;
                 _clnMask = null;
-                ForgetRaw();
                 RedrawOverlay();
                 UpdateBlockInfo();
                 CleanStatus.Text = $"Найдено надписей: {_clnBoxes.Count} "
@@ -762,16 +716,11 @@ public sealed partial class MainWindow
                 if (_clnBoxes.Count == 0) { CleanStatus.Text = "Сначала найдите или обведите текст."; return; }
                 CleanStatus.Text = "Размечаю буквы…";
                 var t = DateTime.UtcNow;
-                // Модель зовём БЕЗ запаса и результат запоминаем: запас потом
-                // накладывается поверх и меняется колесом без нового прогона
-                var raw = await Cleanup.MarkAsync(_clnWork, _clnBoxes, 0, ct);
+                var m = await Cleanup.MarkAsync(_clnWork, _clnBoxes, (int)CleanPad.Value, ct);
                 Push(new CleanStep { What = "разметка страницы", Mask = _clnMask });
-                _clnMask = new byte[raw.Length];
-                _clnRaw = raw;
-                _clnRawBoxes = new List<SKRectI>(_clnBoxes);
-                _clnRawBlock = false;
-                _clnEdit = new byte[raw.Length];
-                ApplyPad();
+                _clnMask = m;
+                RedrawOverlay();
+                UpdateBlockInfo();
                 CleanStatus.Text = $"Размечено {Lit()} px ({(DateTime.UtcNow - t).TotalMilliseconds:F0} мс). "
                                  + "Поправьте кистью, если буква пропущена.";
             }
@@ -819,8 +768,6 @@ public sealed partial class MainWindow
         step.Mask = _clnMask is null ? null : (byte[])_clnMask.Clone();
         Push(step);
 
-        ForgetRaw();     // после дорисовки разметка уже не про эти пиксели
-
         // Стёртое больше не размечено: краска поверх уже чистого места читается
         // как «текст остался», а повторная дорисовка прошлась бы по нему заново
         if (_clnMask is not null)
@@ -847,7 +794,6 @@ public sealed partial class MainWindow
         var has = _clnSel >= 0 && _clnSel < _clnBoxes.Count;
         Push(new CleanStep { What = has ? "разметка блока" : "вся разметка",
                              Mask = (byte[])_clnMask.Clone() });
-        ForgetRaw();     // разметки больше нет — и пересчитывать нечего
 
         if (has)
         {
@@ -1069,21 +1015,24 @@ public sealed partial class MainWindow
         {
             var t = DateTime.UtcNow;
 
-            // Модель зовём БЕЗ запаса и результат запоминаем: запас потом
-            // накладывается поверх и меняется колесом без нового прогона
-            var raw = await Cleanup.MarkAsync(_clnWork, new[] { box }, 0, _clnCts.Token);
+            var part = await Cleanup.MarkAsync(_clnWork, new[] { box }, (int)CleanPad.Value,
+                                               _clnCts.Token);
 
             Push(new CleanStep { What = "разметка блока", Mask = _clnMask });
 
             // Разметка блока ЗАМЕНЯЕТ прежнюю внутри его рамки, а снаружи не
-            // трогает: иначе повторный проход по блоку накапливал бы мусор.
-            // Чистит и раскладывает ApplyPad — ровно то же делает и колесо
-            _clnMask = _clnMask is null ? new byte[raw.Length] : (byte[])_clnMask.Clone();
-            _clnRaw = raw;
-            _clnRawBoxes = new List<SKRectI> { box };
-            _clnRawBlock = true;
-            _clnEdit = new byte[raw.Length];
-            ApplyPad();
+            // трогает: иначе повторный проход по блоку накапливал бы мусор
+            var m = _clnMask is null ? new byte[part.Length] : (byte[])_clnMask.Clone();
+            var w = _clnWork.Width;
+            for (var y = box.Top; y < box.Bottom; y++)
+                for (var x = box.Left; x < box.Right; x++)
+                    m[y * w + x] = 0;
+            for (var i = 0; i < part.Length; i++)
+                if (part[i] >= 128) m[i] = 255;
+
+            _clnMask = m;
+            RedrawOverlay();
+            UpdateBlockInfo();
 
             CleanStatus.Text = $"Блок размечен ({(DateTime.UtcNow - t).TotalMilliseconds:F0} мс). "
                              + "Запас вокруг букв — Q и колесо, ложится сразу.";
@@ -1169,8 +1118,6 @@ public sealed partial class MainWindow
                 has ? "заливка блока" : "заливка градиентом");
             step.Mask = (byte[])_clnMask.Clone();
             Push(step);
-
-            ForgetRaw();
 
             // Залитое больше не размечено — по той же причине, что и у дорисовки
             for (var i = 0; i < part.Length; i++)
@@ -1782,11 +1729,6 @@ public sealed partial class MainWindow
             var px = x0 + (x1 - x0) * i / steps;
             var py = y0 + (y1 - y0) * i / steps;
             Cleanup.Paint(_clnMask, w, h, px, py, r, add);
-
-            // Тем же кругом метим слой правок: колесо потом пересчитает запас,
-            // а тронутое рукой оставит как есть
-            if (_clnEdit is not null)
-                Cleanup.Paint(_clnEdit, w, h, px, py, r, (byte)(add ? EditAdd : EditCut));
         }
 
         // Перерисовываем только задетую полосу: полный слой на 2000x2000 — это

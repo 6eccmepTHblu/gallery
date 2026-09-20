@@ -215,6 +215,46 @@ static class TextMask
     }
 
     /// <summary>
+    /// Раздуть или поджать готовую разметку внутри рамки — на r пикселей по
+    /// контуру. Работает по тому, ЧТО В МАСКЕ СЕЙЧАС, включая правки кистью:
+    /// помнить, откуда что взялось, не нужно вовсе.
+    ///
+    /// Поджатие — то же расширение, только у изнанки: фон растёт в буквы.
+    /// За рамку рост не выходит ни в ту, ни в другую сторону: снаружи для
+    /// куска пусто, и от края он не растёт и не отъедается.
+    /// </summary>
+    internal static void Swell(byte[] mask, int w, int h, SKRectI box, int r, bool grow)
+    {
+        if (r < 1) return;
+        int bx = Math.Clamp(box.Left, 0, w), by = Math.Clamp(box.Top, 0, h);
+        int bw = Math.Clamp(box.Right, 0, w) - bx, bh = Math.Clamp(box.Bottom, 0, h) - by;
+        if (bw < 1 || bh < 1) return;
+
+        var a = new byte[bw * bh];
+        for (var y = 0; y < bh; y++)
+        {
+            var row = (by + y) * w + bx;
+            for (var x = 0; x < bw; x++)
+            {
+                var on = mask[row + x] != 0;
+                a[y * bw + x] = (byte)(on == grow ? 255 : 0);   // поджимаем — по изнанке
+            }
+        }
+
+        Grow(a, bw, bh, r);
+
+        for (var y = 0; y < bh; y++)
+        {
+            var row = (by + y) * w + bx;
+            for (var x = 0; x < bw; x++)
+            {
+                var on = a[y * bw + x] != 0;
+                mask[row + x] = (byte)(on == grow ? 255 : 0);
+            }
+        }
+    }
+
+    /// <summary>
     /// Расширить разметку на r пикселей по контуру.
     ///
     /// Считается по РАССТОЯНИЮ до ближайшей размеченной точки (чамфер 3-4, два

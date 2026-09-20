@@ -748,6 +748,43 @@ static class Checks
         TextMask.Grow(corner, 5, 5, 2);
         Eq(Lit(corner), 6, "в углу вырастает только внутрь");
 
+        Log.AppendLine();
+        Log.AppendLine("TextMask.Swell");
+
+        static SkiaSharp.SKRectI Box(int x, int y, int w, int h) => new(x, y, x + w, y + h);
+
+        // Раздувание — то же расширение, только по готовой разметке
+        var blow = new byte[11 * 11];
+        blow[5 * 11 + 5] = 255;
+        TextMask.Swell(blow, 11, 11, Box(0, 0, 11, 11), 2, grow: true);
+        Eq(Lit(blow), 13, "раздулось в круг радиуса 2");
+
+        // Поджатие снимает кайму: сплошной квадрат 5x5 теряет внешнее кольцо
+        var tight = new byte[11 * 11];
+        for (var ty = 3; ty <= 7; ty++)
+            for (var tx = 3; tx <= 7; tx++) tight[ty * 11 + tx] = 255;
+        TextMask.Swell(tight, 11, 11, Box(0, 0, 11, 11), 1, grow: false);
+        Eq(Lit(tight), 9, "поджалось до сердцевины 3x3");
+
+        // За рамку рост не выходит — иначе запас лез бы в соседнюю надпись
+        var caged = new byte[11 * 11];
+        caged[5 * 11 + 5] = 255;
+        TextMask.Swell(caged, 11, 11, Box(4, 4, 3, 3), 3, grow: true);
+        var out0 = 0;
+        for (var cy = 0; cy < 11; cy++)
+            for (var cx = 0; cx < 11; cx++)
+                if ((cx < 4 || cx > 6 || cy < 4 || cy > 6) && caged[cy * 11 + cx] != 0) out0++;
+        Eq(out0, 0, "за рамку не вылезло");
+        Eq(Lit(caged), 9, "внутри рамки залилось всё");
+
+        // Туда-обратно НЕ теряет размеченного: лишнее остаться может, буквы — нет
+        var trip = new byte[11 * 11];
+        trip[5 * 11 + 5] = 255;
+        trip[2 * 11 + 2] = 255;
+        TextMask.Swell(trip, 11, 11, Box(0, 0, 11, 11), 2, grow: true);
+        TextMask.Swell(trip, 11, 11, Box(0, 0, 11, 11), 2, grow: false);
+        True(trip[5 * 11 + 5] != 0 && trip[2 * 11 + 2] != 0, "туда-обратно не съело разметку");
+
     }
 
     static void Duplicates()
