@@ -67,8 +67,6 @@ public sealed partial class MainWindow
     /// </summary>
     bool _clnPadRun;
 
-    /// <summary>Каким запас был до последнего сдвига — чтобы знать, насколько сдвинули.</summary>
-    int _clnPadWas;
 
     /// <summary>
     /// Идёт фоновый шаг. Отдельным полем, а не только состоянием кнопок:
@@ -175,17 +173,12 @@ public sealed partial class MainWindow
 
         CleanPad.Value = Math.Clamp(SettingsStore.Current.MaskPad,
                                     (int)CleanPad.Minimum, (int)CleanPad.Maximum);
-        _clnPadWas = (int)CleanPad.Value;
         UpdatePadLabel();
         CleanPad.ValueChanged += (_, __) =>
         {
-            var now = (int)CleanPad.Value;
-            var delta = now - _clnPadWas;
-            _clnPadWas = now;
-            SettingsStore.Current.MaskPad = now;
+            SettingsStore.Current.MaskPad = (int)CleanPad.Value;
             UpdatePadLabel();
             SettingsStore.Touch();
-            Swell(delta);
         };
         CleanScroll.ViewChanged += (_, __) => UpdateCursor();
         CleanStack.PointerExited += (_, __) => { _clnCurX = -1; UpdateCursor(); };
@@ -311,16 +304,22 @@ public sealed partial class MainWindow
         Math.Max(3, (int)Math.Round(9 / Math.Max(0.1, CleanScroll.ZoomFactor)));
 
     /// <summary>
-    /// Запас звучит по-разному в нуле и не в нуле: «0 px» читается как
-    /// «настройка выключена», и объяснять это надо там же, где она стоит.
+    /// Ползунок — это запас, с которым РАЗМЕЧАЮТ: он ложится на каждую новую
+    /// разметку сам. Раздувать готовую — это Q и колесо, отдельное действие и
+    /// без потолка. Ноль называем словом: «0 px» читается как «выключено».
     /// </summary>
     void UpdatePadLabel() =>
         CleanPadLabel.Text = CleanPad.Value < 1
-            ? "Запас вокруг букв: нет (Q + колесо)"
-            : $"Запас вокруг букв: {(int)CleanPad.Value} px (Q + колесо)";
+            ? "Запас при разметке: нет"
+            : $"Запас при разметке: {(int)CleanPad.Value} px";
 
     /// <summary>
-    /// Раздуть или поджать САМУ разметку на сколько сдвинулся ползунок.
+    /// Раздуть или поджать САМУ разметку на пиксель — Q и колесо.
+    ///
+    /// Потолка у этого нет и быть не должно: раздувать можно сколько угодно,
+    /// поджимать — пока разметка не кончится. Ползунок рядом задаёт другое:
+    /// запас, с которым РАЗМЕЧАЮТ, и вот он ограничен, потому что двухсотый
+    /// пиксель запаса на каждой новой странице — это не настройка, а авария.
     ///
     /// Не пересчёт «от того, что дала модель», а правка того, что есть сейчас:
     /// растёт и дорисованное кистью, поджимается тоже всё вместе. Поэтому
@@ -356,11 +355,11 @@ public sealed partial class MainWindow
 
         RedrawOverlay();
         UpdateBlockInfo();
-        // В строке — не шаг, а куда пришли: колесо шлёт щелчки пачкой, и
-        // «раздута на 1 px» после десяти щелчков сбивает с толку
-        CleanStatus.Text = $"Запас {(int)CleanPad.Value} px{(has ? " в блоке" : "")}: разметка "
-                         + (delta > 0 ? "раздута" : "поджата")
-                         + $". {Lit()} px под стирание.";
+        var lit = Lit();
+        CleanStatus.Text = lit == 0
+            ? "Разметка поджата в ноль — стирать нечего."
+            : $"Разметка {(delta > 0 ? "раздута" : "поджата")}{(has ? " в блоке" : "")}. "
+              + $"{lit} px под стирание.";
     }
 
     void UpdateBrushLabel() =>
@@ -1450,8 +1449,7 @@ public sealed partial class MainWindow
         if (Down(Windows.System.VirtualKey.Q))
         {
             _clnPadTurned = true;
-            CleanPad.Value = Math.Clamp(CleanPad.Value + (d > 0 ? 1 : -1),
-                                        CleanPad.Minimum, CleanPad.Maximum);
+            Swell(d > 0 ? 1 : -1);
             return;
         }
 
