@@ -61,6 +61,20 @@ public sealed partial class MainWindow
     bool _clnPadTurned;
 
     /// <summary>
+    /// Разметка КАК ЕЁ ОТДАЛА МОДЕЛЬ, до запаса, и рамки, по которым её
+    /// считали. Нужна, чтобы колесо меняло запас сразу: запас — это рост от
+    /// найденных букв, а сами буквы от него не зависят, и гонять ради них
+    /// модель заново незачем.
+    ///
+    /// Живёт ровно до следующей правки: любой мазок, откат, дорисовка или
+    /// заливка её обнуляют. Пересчитывать поверх чужих правок нельзя — они бы
+    /// молча пропали.
+    /// </summary>
+    byte[]? _clnRaw;
+    List<SKRectI>? _clnRawBoxes;
+    bool _clnRawBlock;
+
+    /// <summary>
     /// Идёт фоновый шаг. Отдельным полем, а не только состоянием кнопок:
     /// UpdateBlockInfo зовётся из Push, то есть из КАЖДОГО мазка кистью, и
     /// заново включал кнопки прямо посреди счёта — два прохода по одному кадру
@@ -171,6 +185,7 @@ public sealed partial class MainWindow
             SettingsStore.Current.MaskPad = (int)CleanPad.Value;
             UpdatePadLabel();
             SettingsStore.Touch();
+            ApplyPad(live: true);
         };
         CleanScroll.ViewChanged += (_, __) => UpdateCursor();
         CleanStack.PointerExited += (_, __) => { _clnCurX = -1; UpdateCursor(); };
@@ -304,6 +319,63 @@ public sealed partial class MainWindow
             ? "Запас вокруг букв: нет (Q + колесо)"
             : $"Запас вокруг букв: {(int)CleanPad.Value} px (Q + колесо)";
 
+    /// <summary>
+    /// Разложить запомненную разметку с ТЕКУЩИМ запасом.
+    ///
+    /// live — пришло от колеса. Тогда пересчитываем, только если выбрано ровно
+    /// то, что размечали последним: колесо правит эту разметку, а не какую
+    /// придётся. Сразу после самой разметки выбор проверять нечего — там
+    /// force.
+    /// </summary>
+    void ApplyPad(bool live = false)
+    {
+        var pad = (int)CleanPad.Value;
+        var has = _clnSel >= 0 && _clnSel < _clnBoxes.Count;
+
+        if (_clnRaw is null || _clnRawBoxes is null || _clnMask is null || _clnWork is null
+            || (live && (_clnRawBlock != has
+                         || (has && _clnBoxes[_clnSel] != _clnRawBoxes[0]))))
+        {
+            // Молча ничего не делать нельзя: человек крутит колесо и ждёт,
+            // что разметка поедет. Говорим, почему не поехала
+            if (live && _clnMask is not null)
+                CleanStatus.Text = $"Запас {pad} px — ляжет при следующей разметке: "
+                                 + "поверх уже правленой его не пересчитать.";
+            return;
+        }
+        var w = _clnWork.Width;
+
+        foreach (var b in _clnRawBoxes)
+        {
+            var bw = b.Width;
+            var bh = b.Height;
+            if (bw < 1 || bh < 1) continue;
+
+            // Кусок растёт ВНУТРИ своей рамки — как и при самой разметке,
+            // иначе запас склеил бы соседние надписи
+            var part = new byte[bw * bh];
+            for (var y = 0; y < bh; y++)
+                for (var x = 0; x < bw; x++)
+                    part[y * bw + x] = _clnRaw[(b.Top + y) * w + b.Left + x];
+
+            TextMask.Grow(part, bw, bh, pad);
+
+            for (var y = 0; y < bh; y++)
+            {
+                var row = (b.Top + y) * w + b.Left;
+                for (var x = 0; x < bw; x++)
+                    _clnMask[row + x] = part[y * bw + x] != 0 ? (byte)255 : (byte)0;
+            }
+        }
+
+        RedrawOverlay();
+        UpdateBlockInfo();
+        if (live)
+            CleanStatus.Text = pad < 1
+                ? "Запас убран — разметка как у модели."
+                : $"Запас {pad} px, разметка пересчитана. {Lit()} px под стирание.";
+    }
+
     void UpdateBrushLabel() =>
         CleanSizeLabel.Text = (DrawTool ? "Толщина пера: "
                              : CleanEraser.IsChecked == true ? "Размер ластика: "
@@ -384,6 +456,7 @@ public sealed partial class MainWindow
         _clnWork = null;
         _clnPage = null;
         _clnMask = null;
+        _clnRaw = null;
         _clnBoxes = new List<SKRectI>();
         _clnSel = -1;
         _clnUndo.Clear();
@@ -421,6 +494,7 @@ public sealed partial class MainWindow
         _clnWork?.Dispose();
         _clnWork = _clnPage.Copy();
         _clnMask = null;
+        _clnRaw = null;
         _clnBoxes = new List<SKRectI>();
         _clnSel = -1;
         _clnUndo.Clear();
@@ -467,6 +541,11 @@ public sealed partial class MainWindow
 
     void Push(CleanStep step)
     {
+        // Любое действие делает запомненную «разметку до запаса» устаревшей.
+        // Сама разметка ставит её ПОСЛЕ своего Push — и потому переживает
+        _clnRaw = null;
+        _clnRawBoxes = null;
+
         _clnDirty = true;
         Stack(_clnUndo, step);
         _clnRedo.Clear();       // новое действие обрывает ветку возврата
@@ -488,6 +567,10 @@ public sealed partial class MainWindow
     /// </param>
     CleanStep Apply(CleanStep s, out bool changed)
     {
+        // Откат и возврат меняют разметку мимо Push — запомненную тоже гасим
+        _clnRaw = null;
+        _clnRawBoxes = null;
+
         var back = new CleanStep { What = s.What, Clip = s.Clip };
         changed = false;
 
@@ -640,6 +723,7 @@ public sealed partial class MainWindow
                 _clnBoxes = found;
                 _clnSel = -1;
                 _clnMask = null;
+                _clnRaw = null;
                 RedrawOverlay();
                 UpdateBlockInfo();
                 CleanStatus.Text = $"Найдено надписей: {_clnBoxes.Count} "
@@ -652,11 +736,15 @@ public sealed partial class MainWindow
                 if (_clnBoxes.Count == 0) { CleanStatus.Text = "Сначала найдите или обведите текст."; return; }
                 CleanStatus.Text = "Размечаю буквы…";
                 var t = DateTime.UtcNow;
-                var m = await Cleanup.MarkAsync(_clnWork, _clnBoxes, (int)CleanPad.Value, ct);
+                // Модель зовём БЕЗ запаса и результат запоминаем: запас потом
+                // накладывается поверх и меняется колесом без нового прогона
+                var raw = await Cleanup.MarkAsync(_clnWork, _clnBoxes, 0, ct);
                 Push(new CleanStep { What = "разметка страницы", Mask = _clnMask });
-                _clnMask = m;
-                RedrawOverlay();
-                UpdateBlockInfo();
+                _clnMask = new byte[raw.Length];
+                _clnRaw = raw;
+                _clnRawBoxes = new List<SKRectI>(_clnBoxes);
+                _clnRawBlock = false;
+                ApplyPad();
                 CleanStatus.Text = $"Размечено {Lit()} px ({(DateTime.UtcNow - t).TotalMilliseconds:F0} мс). "
                                  + "Поправьте кистью, если буква пропущена.";
             }
@@ -950,25 +1038,24 @@ public sealed partial class MainWindow
         try
         {
             var t = DateTime.UtcNow;
-            var part = await Cleanup.MarkAsync(_clnWork, new[] { box }, (int)CleanPad.Value, _clnCts.Token);
+
+            // Модель зовём БЕЗ запаса и результат запоминаем: запас потом
+            // накладывается поверх и меняется колесом без нового прогона
+            var raw = await Cleanup.MarkAsync(_clnWork, new[] { box }, 0, _clnCts.Token);
 
             Push(new CleanStep { What = "разметка блока", Mask = _clnMask });
 
             // Разметка блока ЗАМЕНЯЕТ прежнюю внутри его рамки, а снаружи не
-            // трогает: иначе повторный проход по блоку накапливал бы мусор
-            var m = _clnMask is null ? new byte[part.Length] : (byte[])_clnMask.Clone();
-            var w = _clnWork.Width;
-            for (var y = box.Top; y < box.Bottom; y++)
-                for (var x = box.Left; x < box.Right; x++)
-                    m[y * w + x] = 0;
-            for (var i = 0; i < part.Length; i++)
-                if (part[i] >= 128) m[i] = 255;
+            // трогает: иначе повторный проход по блоку накапливал бы мусор.
+            // Чистит и раскладывает ApplyPad — ровно то же делает и колесо
+            _clnMask = _clnMask is null ? new byte[raw.Length] : (byte[])_clnMask.Clone();
+            _clnRaw = raw;
+            _clnRawBoxes = new List<SKRectI> { box };
+            _clnRawBlock = true;
+            ApplyPad();
 
-            _clnMask = m;
-            RedrawOverlay();
-            UpdateBlockInfo();
             CleanStatus.Text = $"Блок размечен ({(DateTime.UtcNow - t).TotalMilliseconds:F0} мс). "
-                             + "Проверьте и поправьте кистью.";
+                             + "Запас вокруг букв — Q и колесо, ложится сразу.";
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { Log.Error($"разметка блока: {ex}"); CleanStatus.Text = ex.Message; }
