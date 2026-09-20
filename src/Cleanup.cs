@@ -387,9 +387,16 @@ static class Cleanup
     /// иначе правка зависела бы от того, насколько человек приблизил картинку.
     /// </summary>
     internal static void Paint(byte[] mask, int w, int h, int cx, int cy, int r, bool add)
+        => Paint(mask, w, h, cx, cy, r, (byte)(add ? 255 : 0));
+
+    /// <summary>
+    /// То же, но с произвольным значением. Нужно слою правок: там кисть и
+    /// ластик пишут не 255 и 0, а «добавил» и «стёр» — по одному кругу в оба
+    /// слоя, иначе круги разъедутся.
+    /// </summary>
+    internal static void Paint(byte[] mask, int w, int h, int cx, int cy, int r, byte v)
     {
         if (r < 1) r = 1;
-        var v = (byte)(add ? 255 : 0);
         var r2 = r * r;
         var y0 = Math.Max(0, cy - r);
         var y1 = Math.Min(h - 1, cy + r);

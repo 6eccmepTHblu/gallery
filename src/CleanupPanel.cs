@@ -75,6 +75,14 @@ public sealed partial class MainWindow
     bool _clnRawBlock;
 
     /// <summary>
+    /// Что человек поправил кистью поверх разметки: 0 — не трогал, EditAdd —
+    /// дорисовал, EditCut — стёр. Без этого слоя первый же мазок обрывал бы
+    /// связь с моделью, и запас переставал шевелиться.
+    /// </summary>
+    byte[]? _clnEdit;
+    const byte EditAdd = 1, EditCut = 2;
+
+    /// <summary>
     /// Идёт фоновый шаг. Отдельным полем, а не только состоянием кнопок:
     /// UpdateBlockInfo зовётся из Push, то есть из КАЖДОГО мазка кистью, и
     /// заново включал кнопки прямо посреди счёта — два прохода по одному кадру
@@ -340,7 +348,7 @@ public sealed partial class MainWindow
             // что разметка поедет. Говорим, почему не поехала
             if (live && _clnMask is not null)
                 CleanStatus.Text = $"Запас {pad} px — ляжет при следующей разметке: "
-                                 + "поверх уже правленой его не пересчитать.";
+                                 + "эту считать уже не от чего.";
             return;
         }
         var w = _clnWork.Width;
@@ -360,11 +368,19 @@ public sealed partial class MainWindow
 
             TextMask.Grow(part, bw, bh, pad);
 
+            // Правка руки сильнее любого запаса: дорисовал — значит там буква,
+            // стёр — значит там её нет, и расти туда нечего
             for (var y = 0; y < bh; y++)
             {
                 var row = (b.Top + y) * w + b.Left;
                 for (var x = 0; x < bw; x++)
-                    _clnMask[row + x] = part[y * bw + x] != 0 ? (byte)255 : (byte)0;
+                {
+                    var v = part[y * bw + x] != 0 ? (byte)255 : (byte)0;
+                    var e = _clnEdit?[row + x] ?? 0;
+                    if (e == EditAdd) v = 255;
+                    else if (e == EditCut) v = 0;
+                    _clnMask[row + x] = v;
+                }
             }
         }
 
@@ -456,7 +472,7 @@ public sealed partial class MainWindow
         _clnWork = null;
         _clnPage = null;
         _clnMask = null;
-        _clnRaw = null;
+        ForgetRaw();
         _clnBoxes = new List<SKRectI>();
         _clnSel = -1;
         _clnUndo.Clear();
@@ -494,7 +510,7 @@ public sealed partial class MainWindow
         _clnWork?.Dispose();
         _clnWork = _clnPage.Copy();
         _clnMask = null;
-        _clnRaw = null;
+        ForgetRaw();
         _clnBoxes = new List<SKRectI>();
         _clnSel = -1;
         _clnUndo.Clear();
@@ -541,10 +557,10 @@ public sealed partial class MainWindow
 
     void Push(CleanStep step)
     {
-        // Любое действие делает запомненную «разметку до запаса» устаревшей.
-        // Сама разметка ставит её ПОСЛЕ своего Push — и потому переживает
-        _clnRaw = null;
-        _clnRawBoxes = null;
+        // Смена набора рамок обрывает связь с моделью: разметка считалась по
+        // прежним. Правки САМОЙ разметки её не обрывают — мазок кистью ложится
+        // в слой правок, и запас продолжает работать поверх него
+        if (step.Boxes is not null) ForgetRaw();
 
         _clnDirty = true;
         Stack(_clnUndo, step);
@@ -565,11 +581,21 @@ public sealed partial class MainWindow
     /// не меняет — вот по этому признаку отмена и переходит на шаг целиком,
     /// вместо того чтобы молча стоять на месте.
     /// </param>
-    CleanStep Apply(CleanStep s, out bool changed)
+    /// <summary>
+    /// Забыть разметку модели и правки поверх неё: дальше запас считать не от
+    /// чего, и колесо будет только менять число.
+    /// </summary>
+    void ForgetRaw()
     {
-        // Откат и возврат меняют разметку мимо Push — запомненную тоже гасим
         _clnRaw = null;
         _clnRawBoxes = null;
+        _clnEdit = null;
+    }
+
+    CleanStep Apply(CleanStep s, out bool changed)
+    {
+        // Откат и возврат меняют разметку мимо Push — связь с моделью рвётся
+        ForgetRaw();
 
         var back = new CleanStep { What = s.What, Clip = s.Clip };
         changed = false;
@@ -723,7 +749,7 @@ public sealed partial class MainWindow
                 _clnBoxes = found;
                 _clnSel = -1;
                 _clnMask = null;
-                _clnRaw = null;
+                ForgetRaw();
                 RedrawOverlay();
                 UpdateBlockInfo();
                 CleanStatus.Text = $"Найдено надписей: {_clnBoxes.Count} "
@@ -744,6 +770,7 @@ public sealed partial class MainWindow
                 _clnRaw = raw;
                 _clnRawBoxes = new List<SKRectI>(_clnBoxes);
                 _clnRawBlock = false;
+                _clnEdit = new byte[raw.Length];
                 ApplyPad();
                 CleanStatus.Text = $"Размечено {Lit()} px ({(DateTime.UtcNow - t).TotalMilliseconds:F0} мс). "
                                  + "Поправьте кистью, если буква пропущена.";
@@ -792,6 +819,8 @@ public sealed partial class MainWindow
         step.Mask = _clnMask is null ? null : (byte[])_clnMask.Clone();
         Push(step);
 
+        ForgetRaw();     // после дорисовки разметка уже не про эти пиксели
+
         // Стёртое больше не размечено: краска поверх уже чистого места читается
         // как «текст остался», а повторная дорисовка прошлась бы по нему заново
         if (_clnMask is not null)
@@ -818,6 +847,7 @@ public sealed partial class MainWindow
         var has = _clnSel >= 0 && _clnSel < _clnBoxes.Count;
         Push(new CleanStep { What = has ? "разметка блока" : "вся разметка",
                              Mask = (byte[])_clnMask.Clone() });
+        ForgetRaw();     // разметки больше нет — и пересчитывать нечего
 
         if (has)
         {
@@ -1052,6 +1082,7 @@ public sealed partial class MainWindow
             _clnRaw = raw;
             _clnRawBoxes = new List<SKRectI> { box };
             _clnRawBlock = true;
+            _clnEdit = new byte[raw.Length];
             ApplyPad();
 
             CleanStatus.Text = $"Блок размечен ({(DateTime.UtcNow - t).TotalMilliseconds:F0} мс). "
@@ -1138,6 +1169,8 @@ public sealed partial class MainWindow
                 has ? "заливка блока" : "заливка градиентом");
             step.Mask = (byte[])_clnMask.Clone();
             Push(step);
+
+            ForgetRaw();
 
             // Залитое больше не размечено — по той же причине, что и у дорисовки
             for (var i = 0; i < part.Length; i++)
@@ -1745,8 +1778,16 @@ public sealed partial class MainWindow
 
         var steps = Math.Max(1, (int)Math.Max(Math.Abs(x1 - x0), Math.Abs(y1 - y0)));
         for (var i = 0; i <= steps; i++)
-            Cleanup.Paint(_clnMask, w, h,
-                          x0 + (x1 - x0) * i / steps, y0 + (y1 - y0) * i / steps, r, add);
+        {
+            var px = x0 + (x1 - x0) * i / steps;
+            var py = y0 + (y1 - y0) * i / steps;
+            Cleanup.Paint(_clnMask, w, h, px, py, r, add);
+
+            // Тем же кругом метим слой правок: колесо потом пересчитает запас,
+            // а тронутое рукой оставит как есть
+            if (_clnEdit is not null)
+                Cleanup.Paint(_clnEdit, w, h, px, py, r, (byte)(add ? EditAdd : EditCut));
+        }
 
         // Перерисовываем только задетую полосу: полный слой на 2000x2000 — это
         // 16 МБ за мазок, и рука начинает ощущать задержку
