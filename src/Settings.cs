@@ -47,6 +47,13 @@ sealed class Settings
     /// </summary>
     public int BrushSize { get; set; } = 10;
     public int EraserSize { get; set; } = 20;
+    /// <summary>
+    /// Запас вокруг найденных букв при разметке, px. Ноль — как отдала модель.
+    /// Помнится, потому что зависит от кегля и от того, насколько мягко
+    /// сглажен леттеринг: на своём материале человек подбирает его один раз.
+    /// </summary>
+    public int MaskPad { get; set; }
+
     /// <summary>Перо: толщина и цвет. Цвет помнится — его берут пипеткой раз.</summary>
     public int PenSize { get; set; } = 3;
     public uint PenColor { get; set; } = 0xFF000000;

@@ -56,6 +56,10 @@ public sealed partial class MainWindow
 
     bool _clnDragBox, _clnPainting, _clnPreview, _clnPanning, _clnDirty;
 
+    /// <summary>Q держат ради колеса: что было в руке и крутили ли вообще.</summary>
+    ToggleButton? _clnToolBeforeQ;
+    bool _clnPadTurned;
+
     /// <summary>
     /// Идёт фоновый шаг. Отдельным полем, а не только состоянием кнопок:
     /// UpdateBlockInfo зовётся из Push, то есть из КАЖДОГО мазка кистью, и
@@ -158,6 +162,16 @@ public sealed partial class MainWindow
             ToolSize = (int)CleanSize.Value;
             SettingsStore.Touch();      // с дебаунсом: Ctrl+колесо шлёт события пачкой
         };
+
+        CleanPad.Value = Math.Clamp(SettingsStore.Current.MaskPad,
+                                    (int)CleanPad.Minimum, (int)CleanPad.Maximum);
+        UpdatePadLabel();
+        CleanPad.ValueChanged += (_, __) =>
+        {
+            SettingsStore.Current.MaskPad = (int)CleanPad.Value;
+            UpdatePadLabel();
+            SettingsStore.Touch();
+        };
         CleanScroll.ViewChanged += (_, __) => UpdateCursor();
         CleanStack.PointerExited += (_, __) => { _clnCurX = -1; UpdateCursor(); };
 
@@ -193,12 +207,13 @@ public sealed partial class MainWindow
         };
     }
 
+    ToggleButton[] Tools => new[] { CleanToolBox, CleanBrush, CleanEraser,
+                                    CleanPick, CleanPencil, CleanLine, CleanRect, CleanOval };
+
     /// <summary>Инструменты — переключатели, и включён ровно один.</summary>
     void Tool(ToggleButton on)
     {
-        foreach (var t in new[] { CleanToolBox, CleanBrush, CleanEraser,
-                                  CleanPick, CleanPencil, CleanLine, CleanRect, CleanOval })
-            t.IsChecked = ReferenceEquals(t, on);
+        foreach (var t in Tools) t.IsChecked = ReferenceEquals(t, on);
 
         // Ползунок принадлежит тому, что сейчас в руке: у кисти, ластика и пера
         // размеры свои. Сначала флажки, потом значение — иначе запись ушла бы
@@ -279,6 +294,15 @@ public sealed partial class MainWindow
     /// </summary>
     int GripMargin() =>
         Math.Max(3, (int)Math.Round(9 / Math.Max(0.1, CleanScroll.ZoomFactor)));
+
+    /// <summary>
+    /// Запас звучит по-разному в нуле и не в нуле: «0 px» читается как
+    /// «настройка выключена», и объяснять это надо там же, где она стоит.
+    /// </summary>
+    void UpdatePadLabel() =>
+        CleanPadLabel.Text = CleanPad.Value < 1
+            ? "Запас вокруг букв: нет (Q + колесо)"
+            : $"Запас вокруг букв: {(int)CleanPad.Value} px (Q + колесо)";
 
     void UpdateBrushLabel() =>
         CleanSizeLabel.Text = (DrawTool ? "Толщина пера: "
@@ -628,7 +652,7 @@ public sealed partial class MainWindow
                 if (_clnBoxes.Count == 0) { CleanStatus.Text = "Сначала найдите или обведите текст."; return; }
                 CleanStatus.Text = "Размечаю буквы…";
                 var t = DateTime.UtcNow;
-                var m = await Cleanup.MarkAsync(_clnWork, _clnBoxes, ct);
+                var m = await Cleanup.MarkAsync(_clnWork, _clnBoxes, (int)CleanPad.Value, ct);
                 Push(new CleanStep { What = "разметка страницы", Mask = _clnMask });
                 _clnMask = m;
                 RedrawOverlay();
@@ -779,7 +803,14 @@ public sealed partial class MainWindow
 
             // Верхний ряд — ИНСТРУМЕНТ, нижний — действия над блоком: сперва
             // берут инструмент, потом им работают, и ряды идут в том же порядке
-            case Windows.System.VirtualKey.Q: Tool(CleanToolBox); break;
+            // Q держат и ради колеса — чтобы подобрать запас вокруг букв.
+            // Инструмент на это время меняется, но к отпусканию вернётся тот,
+            // что был: иначе подбор запаса каждый раз отбирал бы кисть
+            case Windows.System.VirtualKey.Q:
+                _clnToolBeforeQ = Array.Find(Tools, t => t.IsChecked == true);
+                _clnPadTurned = false;
+                Tool(CleanToolBox);
+                break;
             case Windows.System.VirtualKey.W: Tool(CleanBrush); break;
             case Windows.System.VirtualKey.E: Tool(CleanEraser); break;
 
@@ -845,6 +876,16 @@ public sealed partial class MainWindow
 
     void OnCleanKeyUp(object sender, KeyRoutedEventArgs e)
     {
+        if (e.Key == Windows.System.VirtualKey.Q)
+        {
+            // Колесо крутили — значит Q была модификатором, а не выбором
+            // инструмента, и рука ждёт прежний
+            if (_clnPadTurned && _clnToolBeforeQ is not null) Tool(_clnToolBeforeQ);
+            _clnPadTurned = false;
+            _clnToolBeforeQ = null;
+            e.Handled = true;
+            return;
+        }
         if (e.Key != Windows.System.VirtualKey.F1) return;
         Preview(false);
         e.Handled = true;
@@ -909,7 +950,7 @@ public sealed partial class MainWindow
         try
         {
             var t = DateTime.UtcNow;
-            var part = await Cleanup.MarkAsync(_clnWork, new[] { box }, _clnCts.Token);
+            var part = await Cleanup.MarkAsync(_clnWork, new[] { box }, (int)CleanPad.Value, _clnCts.Token);
 
             Push(new CleanStep { What = "разметка блока", Mask = _clnMask });
 
@@ -1337,6 +1378,15 @@ public sealed partial class MainWindow
         var d = pt.Properties.MouseWheelDelta;
         if (d == 0) return;
         e.Handled = true;
+
+        // Запас вокруг букв — на Q: это параметр разметки, а Q ею и заведует
+        if (Down(Windows.System.VirtualKey.Q))
+        {
+            _clnPadTurned = true;
+            CleanPad.Value = Math.Clamp(CleanPad.Value + (d > 0 ? 1 : -1),
+                                        CleanPad.Minimum, CleanPad.Maximum);
+            return;
+        }
 
         if (Down(Windows.System.VirtualKey.Control))
         {

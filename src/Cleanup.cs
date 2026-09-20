@@ -74,9 +74,13 @@ static class Cleanup
         return Separate(Absorb(boxes, lines));
     }
 
-    /// <summary>Шаг 2. Какие пиксели внутри рамок — буквы.</summary>
-    public static Task<byte[]> MarkAsync(SKBitmap page, IReadOnlyList<SKRectI> boxes, CancellationToken ct)
-        => Task.Run(() => TextMask.Refine(page, boxes), ct);
+    /// <summary>
+    /// Шаг 2. Какие пиксели внутри рамок — буквы. grow — запас вокруг них
+    /// (см. <see cref="TextMask.Refine"/>).
+    /// </summary>
+    public static Task<byte[]> MarkAsync(SKBitmap page, IReadOnlyList<SKRectI> boxes,
+                                         int grow, CancellationToken ct)
+        => Task.Run(() => TextMask.Refine(page, boxes, grow), ct);
 
     /// <summary>Шаг 3. Стереть и дорисовать. Исходник не меняется.</summary>
     public static Task<SKBitmap?> EraseAsync(SKBitmap page, byte[] mask, CancellationToken ct)

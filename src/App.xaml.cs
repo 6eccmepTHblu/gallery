@@ -183,7 +183,7 @@ public partial class App : Application
                 var found = Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
 
                 var t1 = Stopwatch.GetTimestamp();
-                var mask = TextMask.Refine(page, boxes);
+                var mask = TextMask.Refine(page, boxes, SettingsStore.Current.MaskPad);
                 var marked = Stopwatch.GetElapsedTime(t1).TotalMilliseconds;
 
                 var lit = 0;

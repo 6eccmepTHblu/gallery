@@ -717,6 +717,37 @@ static class Checks
 
         Eq(TextMask.Blobs(new bool[9], 3, 3).Count, 0, "пусто — ни одного");
 
+        Log.AppendLine();
+        Log.AppendLine("TextMask.Grow");
+
+        static int Lit(byte[] m) { var n = 0; foreach (var v in m) if (v != 0) n++; return n; }
+
+        // Запас растёт КРУГОМ, а не квадратом: у квадрата диагональ длиннее
+        // стороны в полтора раза, и у буквы вырастают углы вместо каймы
+        var dot = new byte[11 * 11];
+        dot[5 * 11 + 5] = 255;
+        TextMask.Grow(dot, 11, 11, 2);
+        Eq(Lit(dot), 13, "точка выросла в круг радиуса 2");
+
+        var wide = new byte[11 * 11];
+        wide[5 * 11 + 5] = 255;
+        TextMask.Grow(wide, 11, 11, 3);
+        Eq(Lit(wide), 29, "круг радиуса 3");
+        Eq(wide[5 * 11 + 8], (byte)255, "край радиуса закрашен");
+        Eq(wide[8 * 11 + 8], (byte)0, "угол квадрата — нет");
+
+        // Ноль — не трогаем вовсе: это «как отдала модель»
+        var same = new byte[9];
+        same[4] = 255;
+        TextMask.Grow(same, 3, 3, 0);
+        Eq(Lit(same), 1, "нулевой запас ничего не меняет");
+
+        // У края буфера рост обязан упереться, а не уйти за массив
+        var corner = new byte[5 * 5];
+        corner[0] = 255;
+        TextMask.Grow(corner, 5, 5, 2);
+        Eq(Lit(corner), 6, "в углу вырастает только внутрь");
+
     }
 
     static void Duplicates()

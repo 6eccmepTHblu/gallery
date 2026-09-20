@@ -156,8 +156,16 @@ static class TextMask
 
     /// <summary>
     /// Точная маска по списку рамок, во весь размер страницы. 255 — буква.
+    ///
+    /// <paramref name="grow"/> — запас вокруг найденного, в пикселях кадра.
+    /// Сегментатор обводит глиф вплотную, а у сглаженного края остаётся
+    /// полутёмный ободок: он идёт около 0,2…0,4 и порога не берёт, зато
+    /// прекрасно виден после дорисовки. Опускать порог ради него нельзя — на
+    /// 0,25 вместе с ободком полезут контур пузыря и тонкие линии рисунка.
+    /// Запас растит разметку по контуру самой буквы: где буквы нет, расти
+    /// нечему.
     /// </summary>
-    public static byte[] Refine(SKBitmap page, IEnumerable<SKRectI> boxes)
+    public static byte[] Refine(SKBitmap page, IEnumerable<SKRectI> boxes, int grow = 0)
     {
         int w = page.Width, h = page.Height;
         var mask = new byte[w * h];
@@ -180,20 +188,86 @@ static class TextMask
 
             // Поля ушли в МОДЕЛЬ, но не в разметку. Рамку человек провёл сам,
             // и краска за её краем читается как промах: обвёл одну надпись —
-            // разметилась она и кусок соседней
-            for (var y = 0; y < crop.Height; y++)
+            // разметилась она и кусок соседней.
+            //
+            // Собираем по рамке отдельным куском, а не сразу в страницу: запас
+            // обязан расти ВНУТРИ своей рамки. Расти по всей странице — значит
+            // склеить запасом две соседние надписи
+            int bx = Math.Max(b.Left, 0), by = Math.Max(b.Top, 0);
+            int bw = Math.Min(b.Right, w) - bx, bh = Math.Min(b.Bottom, h) - by;
+            if (bw < 1 || bh < 1) continue;
+
+            var part = new byte[bw * bh];
+            for (var y = 0; y < bh; y++)
             {
-                var my = y0 + y;
-                if (my < b.Top || my >= b.Bottom) continue;
-                for (var x = 0; x < crop.Width; x++)
-                {
-                    var mx = x0 + x;
-                    if (mx < b.Left || mx >= b.Right) continue;
-                    if (p[y * crop.Width + x] > Threshold) mask[my * w + mx] = 255;
-                }
+                var cy = by + y - y0;
+                for (var x = 0; x < bw; x++)
+                    if (p[cy * crop.Width + bx + x - x0] > Threshold) part[y * bw + x] = 255;
             }
+
+            Grow(part, bw, bh, grow);
+
+            for (var y = 0; y < bh; y++)
+                for (var x = 0; x < bw; x++)
+                    if (part[y * bw + x] != 0) mask[(by + y) * w + bx + x] = 255;
         }
         return mask;
+    }
+
+    /// <summary>
+    /// Расширить разметку на r пикселей по контуру.
+    ///
+    /// Считается по РАССТОЯНИЮ до ближайшей размеченной точки (чамфер 3-4, два
+    /// прохода), а не квадратным окном: квадрат растёт по диагонали в полтора
+    /// раза сильнее, и у буквы вместо ровной каймы вырастают углы. Два прохода
+    /// дают линейное время от площади и не зависят от r вовсе.
+    /// </summary>
+    internal static void Grow(byte[] m, int w, int h, int r)
+    {
+        if (r < 1 || w < 1 || h < 1) return;
+
+        const int Far = 1 << 20;
+        var d = new int[w * h];
+        for (var i = 0; i < d.Length; i++) d[i] = m[i] != 0 ? 0 : Far;
+
+        // Вперёд: смотрим на уже посчитанных соседей сверху и слева
+        for (var y = 0; y < h; y++)
+            for (var x = 0; x < w; x++)
+            {
+                var i = y * w + x;
+                var v = d[i];
+                if (v == 0) continue;
+                if (y > 0)
+                {
+                    if (x > 0) v = Math.Min(v, d[i - w - 1] + 4);
+                    v = Math.Min(v, d[i - w] + 3);
+                    if (x < w - 1) v = Math.Min(v, d[i - w + 1] + 4);
+                }
+                if (x > 0) v = Math.Min(v, d[i - 1] + 3);
+                d[i] = v;
+            }
+
+        // Назад: снизу и справа. Расстояние здесь уже окончательное, поэтому
+        // тем же проходом и красим
+        var lim = 3 * r;
+        for (var y = h - 1; y >= 0; y--)
+            for (var x = w - 1; x >= 0; x--)
+            {
+                var i = y * w + x;
+                var v = d[i];
+                if (v != 0)
+                {
+                    if (y < h - 1)
+                    {
+                        if (x > 0) v = Math.Min(v, d[i + w - 1] + 4);
+                        v = Math.Min(v, d[i + w] + 3);
+                        if (x < w - 1) v = Math.Min(v, d[i + w + 1] + 4);
+                    }
+                    if (x < w - 1) v = Math.Min(v, d[i + 1] + 3);
+                    d[i] = v;
+                }
+                if (v <= lim) m[i] = 255;
+            }
     }
 
     /// <summary>
