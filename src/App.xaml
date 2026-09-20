@@ -1,0 +1,80 @@
+<Application x:Class="Gallery.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls"/>
+      </ResourceDictionary.MergedDictionaries>
+
+      <!-- Палитра §7.5. Ни одного литерала в разметке и в коде: в высококонтрастной
+           теме Windows захардкоженный цвет означает невидимый текст. -->
+      <ResourceDictionary.ThemeDictionaries>
+
+        <!-- Тёмная — по умолчанию. Для просмотра изображений это тот случай,
+             где отклонение от системной темы оправдано. -->
+        <ResourceDictionary x:Key="Default">
+          <SolidColorBrush x:Key="GalleryCanvasBrush"          Color="#141414"/>
+          <SolidColorBrush x:Key="GallerySurfaceBrush"         Color="#E61B1B1D"/>
+          <SolidColorBrush x:Key="GallerySurfaceElevatedBrush" Color="#F2232326"/>
+          <SolidColorBrush x:Key="GalleryStrokeBrush"          Color="#1AFFFFFF"/>
+          <SolidColorBrush x:Key="GalleryTextPrimaryBrush"     Color="#F2F2F3"/>
+          <SolidColorBrush x:Key="GalleryTextSecondaryBrush"   Color="#A9A9AE"/>
+          <SolidColorBrush x:Key="GalleryTextTertiaryBrush"    Color="#6E6E73"/>
+          <SolidColorBrush x:Key="GalleryAccentBrush"          Color="#4CC2FF"/>
+          <SolidColorBrush x:Key="GalleryDangerBrush"          Color="#FF7B72"/>
+          <SolidColorBrush x:Key="GalleryWarningBrush"         Color="#FFC53D"/>
+          <SolidColorBrush x:Key="GalleryOverlayBrush"         Color="#CC000000"/>
+          <SolidColorBrush x:Key="GalleryTransparencyBrush"    Color="#2A2A2C"/>
+          <SolidColorBrush x:Key="GalleryDropTintBrush"        Color="#144CC2FF"/>
+          <SolidColorBrush x:Key="GalleryBadgeTextBrush"       Color="#000000"/>
+          <SolidColorBrush x:Key="GallerySlotEmptyBrush"       Color="#33FFFFFF"/>
+          <SolidColorBrush x:Key="GalleryRailBrush"            Color="#804CC2FF"/>
+        </ResourceDictionary>
+
+        <ResourceDictionary x:Key="Light">
+          <!-- Холст не белый: белый фон завышает воспринимаемую яркость фотографии -->
+          <SolidColorBrush x:Key="GalleryCanvasBrush"          Color="#ECECEC"/>
+          <SolidColorBrush x:Key="GallerySurfaceBrush"         Color="#E6F5F5F7"/>
+          <SolidColorBrush x:Key="GallerySurfaceElevatedBrush" Color="#F2FBFBFB"/>
+          <SolidColorBrush x:Key="GalleryStrokeBrush"          Color="#24000000"/>
+          <SolidColorBrush x:Key="GalleryTextPrimaryBrush"     Color="#1A1A1C"/>
+          <SolidColorBrush x:Key="GalleryTextSecondaryBrush"   Color="#5B5B60"/>
+          <SolidColorBrush x:Key="GalleryTextTertiaryBrush"    Color="#8E8E93"/>
+          <SolidColorBrush x:Key="GalleryAccentBrush"          Color="#0F6CBD"/>
+          <SolidColorBrush x:Key="GalleryDangerBrush"          Color="#C42B1C"/>
+          <SolidColorBrush x:Key="GalleryWarningBrush"         Color="#9D5D00"/>
+          <SolidColorBrush x:Key="GalleryOverlayBrush"         Color="#CCFFFFFF"/>
+          <SolidColorBrush x:Key="GalleryTransparencyBrush"    Color="#D8D8DA"/>
+          <SolidColorBrush x:Key="GalleryDropTintBrush"        Color="#140F6CBD"/>
+          <SolidColorBrush x:Key="GalleryBadgeTextBrush"       Color="#FFFFFF"/>
+          <SolidColorBrush x:Key="GallerySlotEmptyBrush"       Color="#33000000"/>
+          <SolidColorBrush x:Key="GalleryRailBrush"            Color="#800F6CBD"/>
+        </ResourceDictionary>
+
+        <!-- Высокая контрастность: только системные кисти и НИКАКОЙ альфы.
+             Поверхности в HC различимы только границами, поэтому фон панелей
+             равен фону окна, а отделяет их обводка WindowText. -->
+        <ResourceDictionary x:Key="HighContrast">
+          <SolidColorBrush x:Key="GalleryCanvasBrush"          Color="{ThemeResource SystemColorWindowColor}"/>
+          <SolidColorBrush x:Key="GallerySurfaceBrush"         Color="{ThemeResource SystemColorWindowColor}"/>
+          <SolidColorBrush x:Key="GallerySurfaceElevatedBrush" Color="{ThemeResource SystemColorWindowColor}"/>
+          <SolidColorBrush x:Key="GalleryStrokeBrush"          Color="{ThemeResource SystemColorWindowTextColor}"/>
+          <SolidColorBrush x:Key="GalleryTextPrimaryBrush"     Color="{ThemeResource SystemColorWindowTextColor}"/>
+          <SolidColorBrush x:Key="GalleryTextSecondaryBrush"   Color="{ThemeResource SystemColorWindowTextColor}"/>
+          <SolidColorBrush x:Key="GalleryTextTertiaryBrush"    Color="{ThemeResource SystemColorGrayTextColor}"/>
+          <SolidColorBrush x:Key="GalleryAccentBrush"          Color="{ThemeResource SystemColorHighlightColor}"/>
+          <SolidColorBrush x:Key="GalleryDangerBrush"          Color="{ThemeResource SystemColorHighlightColor}"/>
+          <SolidColorBrush x:Key="GalleryWarningBrush"         Color="{ThemeResource SystemColorHighlightColor}"/>
+          <SolidColorBrush x:Key="GalleryOverlayBrush"         Color="{ThemeResource SystemColorWindowColor}"/>
+          <SolidColorBrush x:Key="GalleryTransparencyBrush"    Color="{ThemeResource SystemColorWindowColor}"/>
+          <SolidColorBrush x:Key="GalleryDropTintBrush"        Color="Transparent"/>
+          <SolidColorBrush x:Key="GalleryBadgeTextBrush"       Color="{ThemeResource SystemColorHighlightTextColor}"/>
+          <SolidColorBrush x:Key="GallerySlotEmptyBrush"       Color="{ThemeResource SystemColorGrayTextColor}"/>
+          <SolidColorBrush x:Key="GalleryRailBrush"            Color="{ThemeResource SystemColorHighlightColor}"/>
+        </ResourceDictionary>
+
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+</Application>

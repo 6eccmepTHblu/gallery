@@ -1,0 +1,580 @@
+<Window x:Class="Gallery.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Gallery">
+
+  <Grid x:Name="Root" RowDefinitions="Auto,*,Auto"
+        KeyboardAcceleratorPlacementMode="Hidden">
+
+    <!-- Титлбар: свой контент, но кнопки окна родные — иначе ломаются Snap Layouts -->
+    <Grid x:Name="TitleBarArea" Grid.Row="0" MinHeight="40" Background="Transparent">
+      <TextBlock x:Name="TitleText" Text="Gallery"
+                 Margin="16,0,0,0" VerticalAlignment="Center"
+                 FontFamily="Segoe UI Variable Text" FontSize="12"
+                 Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+    </Grid>
+
+    <!-- Холст: изображение — единственный постоянный объект на экране -->
+    <Grid x:Name="CanvasRoot" Grid.Row="1" AllowDrop="True"
+          Background="{ThemeResource GalleryCanvasBrush}">
+      <Grid.RenderTransform>
+        <TranslateTransform x:Name="CanvasShift"/>
+      </Grid.RenderTransform>
+
+      <!-- ScrollView, а не ScrollViewer: зум к курсору и pinch идут на
+           InteractionTracker в потоке композитора, вне UI-потока -->
+      <local:PanSurface x:Name="Zoom"
+                  ZoomMode="Enabled"
+                  HorizontalScrollBarVisibility="Hidden"
+                  VerticalScrollBarVisibility="Hidden"
+                  ContentOrientation="Both"
+                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+        <!-- ponytail: под альфой плоский нейтральный фон вместо шахматки.
+             ImageBrush в WinUI 3 не тайлится, а генерировать шахматку под размер
+             кадра — 12 МБ на картинку ради косметики. Вернуться, если реально
+             понадобится отличать прозрачное от серого. -->
+        <Border x:Name="ImgHost" Background="{ThemeResource GalleryTransparencyBrush}"
+                HorizontalAlignment="Center" VerticalAlignment="Center">
+          <!-- Перевод кладётся ВНУТРЬ содержимого ScrollView, рядом с кадром:
+               тогда он масштабируется и ездит вместе с картинкой сам, а сам
+               файл не трогается вовсе и слой гасится мгновенно (§4.9) -->
+          <Grid>
+            <Image x:Name="Img" Stretch="Fill" IsTabStop="True"/>
+            <Canvas x:Name="TransLayer" Visibility="Collapsed" IsHitTestVisible="False"/>
+            <!-- Слой поверки: распознанное поверх кадра. В отличие от перевода
+                 он ПРИНИМАЕТ указатель — наведение гасит ячейку, правая кнопка
+                 копирует текст (§4.12) -->
+            <Canvas x:Name="OcrLayer" Visibility="Collapsed"/>
+          </Grid>
+        </Border>
+      </local:PanSurface>
+
+      <!-- Пустое состояние: не мастер и не тур, три строки и одна кнопка (§7.8) -->
+      <StackPanel x:Name="EmptyState" Spacing="16" MaxWidth="460"
+                  HorizontalAlignment="Center" VerticalAlignment="Center">
+        <FontIcon Glyph="&#xEB9F;" FontFamily="Segoe Fluent Icons" FontSize="48"
+                  Foreground="{ThemeResource GalleryTextTertiaryBrush}"/>
+        <TextBlock x:Name="EmptyTitle" Text="Откройте папку с изображениями"
+                   FontFamily="Segoe UI Variable Display" FontSize="28" FontWeight="SemiBold"
+                   TextAlignment="Center" TextWrapping="Wrap"
+                   Foreground="{ThemeResource GalleryTextPrimaryBrush}"/>
+        <TextBlock x:Name="EmptyHint" Text="Перетащите папку сюда или нажмите Ctrl+O"
+                   FontSize="14" TextAlignment="Center" TextWrapping="Wrap"
+                   Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+        <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center">
+          <Button x:Name="EmptyPick" Content="Выбрать папку" MinHeight="32"
+                  Style="{StaticResource AccentButtonStyle}"/>
+          <Button x:Name="EmptyReveal" Content="Показать в Проводнике"
+                  MinHeight="32" Visibility="Collapsed"/>
+          <HyperlinkButton x:Name="EmptyKeys" Content="Горячие клавиши" MinHeight="32"/>
+        </StackPanel>
+        <TextBlock Text="Пробел откладывает текущий кадр в выбранную папку"
+                   FontSize="12" TextAlignment="Center"
+                   Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+      </StackPanel>
+
+      <!-- Карточка ошибки: навигация стрелками работает поверх неё, застрять нельзя.
+           «Скопировать всё равно» доступно всегда — неспособность отрисовать превью
+           не должна блокировать основное действие приложения (§7.8) -->
+      <Border x:Name="ErrorCard" Visibility="Collapsed" Width="340"
+              HorizontalAlignment="Center" VerticalAlignment="Center"
+              Background="{ThemeResource GallerySurfaceElevatedBrush}" CornerRadius="12"
+              BorderThickness="1" BorderBrush="{ThemeResource GalleryStrokeBrush}" Padding="20">
+        <StackPanel Spacing="12">
+          <FontIcon Glyph="&#xE7BA;" FontFamily="Segoe Fluent Icons" FontSize="24"
+                    HorizontalAlignment="Left"
+                    Foreground="{ThemeResource GalleryWarningBrush}"/>
+          <TextBlock x:Name="ErrCaption" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"
+                     Foreground="{ThemeResource GalleryTextPrimaryBrush}"/>
+          <TextBlock x:Name="ErrWhy" FontSize="14" TextWrapping="Wrap"
+                     Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+          <Button x:Name="ErrStore" Visibility="Collapsed" Content="Установить из Microsoft Store"
+                  MinHeight="32" HorizontalAlignment="Stretch"
+                  Style="{StaticResource AccentButtonStyle}"/>
+          <Button x:Name="ErrCopyAnyway" Content="Скопировать всё равно"
+                  MinHeight="32" HorizontalAlignment="Stretch"/>
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+            <Button x:Name="ErrReveal" Grid.Column="0" Content="В Проводнике"
+                    MinHeight="32" HorizontalAlignment="Stretch"/>
+            <Button x:Name="ErrSkip" Grid.Column="1" Content="Пропустить"
+                    MinHeight="32" HorizontalAlignment="Stretch"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- Бейдж: файл уже лежит в целевой папке. Это состояние, а не событие —
+           остаётся при возврате к кадру. Всегда с цифрой, не только цветом (дальтонизм) -->
+      <StackPanel x:Name="FrameBadges" Orientation="Horizontal" Spacing="6"
+                  HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12"/>
+
+      <!-- Лента миниатюр: накладка, а не строка сетки (§4.8). Строка меняла бы
+           вьюпорт при каждом показе — пересчёт «вписать», сброс зума, а на границе
+           тира и сброс всего кэша. Прозрачность здесь осмысленна: кадр виден насквозь -->
+      <Border x:Name="StripBox" Visibility="Collapsed"
+              AutomationProperties.AccessibilityView="Raw"
+              VerticalAlignment="Bottom" HorizontalAlignment="Stretch"
+              Background="{ThemeResource GalleryOverlayBrush}"
+              BorderThickness="0,1,0,0" BorderBrush="{ThemeResource GalleryStrokeBrush}"
+              Padding="0,9">
+        <StackPanel x:Name="StripRow" Orientation="Horizontal"
+                    HorizontalAlignment="Center"/>
+      </Border>
+
+      <!-- Ход работы: перевод страницы занимает секунды, и молчать эти секунды
+           нельзя — иначе нажатие выглядит как «не сработало» (§7.7) -->
+      <Border x:Name="WorkCard" Visibility="Collapsed"
+              HorizontalAlignment="Center" VerticalAlignment="Center"
+              Background="{ThemeResource GallerySurfaceElevatedBrush}" CornerRadius="12"
+              BorderThickness="1" BorderBrush="{ThemeResource GalleryStrokeBrush}"
+              Padding="24,20" MinWidth="300">
+        <StackPanel Spacing="14" HorizontalAlignment="Center">
+          <ProgressRing x:Name="WorkRing" IsActive="True" Width="32" Height="32"
+                        HorizontalAlignment="Center"/>
+          <TextBlock x:Name="WorkText" FontFamily="Segoe UI Variable Text" FontSize="14"
+                     HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                     Foreground="{ThemeResource GalleryTextPrimaryBrush}"/>
+          <ProgressBar x:Name="WorkBar" Visibility="Collapsed" Width="260" Minimum="0" Maximum="1"/>
+          <Button x:Name="WorkCancel" Content="Отмена" MinHeight="32"
+                  HorizontalAlignment="Center"/>
+        </StackPanel>
+      </Border>
+
+      <!-- Первый запуск перевода: модель весит сотни мегабайт, и решение
+           качать её принимает человек, а не приложение за него -->
+      <Border x:Name="ModelCard" Visibility="Collapsed" MaxWidth="420"
+              HorizontalAlignment="Center" VerticalAlignment="Center"
+              Background="{ThemeResource GallerySurfaceElevatedBrush}" CornerRadius="12"
+              BorderThickness="1" BorderBrush="{ThemeResource GalleryStrokeBrush}" Padding="24,20">
+        <StackPanel Spacing="14">
+          <TextBlock Text="Перевод страниц" FontFamily="Segoe UI Variable Display"
+                     FontSize="20" FontWeight="SemiBold"
+                     Foreground="{ThemeResource GalleryTextPrimaryBrush}"/>
+          <TextBlock x:Name="ModelWhy" TextWrapping="Wrap" FontSize="14"
+                     Foreground="{ThemeResource GalleryTextSecondaryBrush}"
+                     Text="Нужно один раз скачать модель перевода — 425 МБ. Дальше всё работает без сети: и распознавание, и перевод идут на этом компьютере."/>
+          <Button x:Name="ModelGet" Content="Скачать модель" MinHeight="32"
+                  HorizontalAlignment="Stretch" Style="{StaticResource AccentButtonStyle}"/>
+          <TextBlock Text="Esc — закрыть" FontSize="12"
+                     Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+        </StackPanel>
+      </Border>
+
+      <!-- Тост: один слот, переиспользуется. Не стекается (§7.7) -->
+      <Border x:Name="Toast" Visibility="Collapsed"
+              AutomationProperties.LiveSetting="Polite"
+              HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,24"
+              Background="{ThemeResource GallerySurfaceBrush}" CornerRadius="8" Padding="16,12" MinHeight="44"
+              BorderThickness="1" BorderBrush="{ThemeResource GalleryStrokeBrush}">
+        <StackPanel Orientation="Horizontal" Spacing="12">
+          <TextBlock x:Name="ToastText" FontFamily="Segoe UI Variable Text" FontSize="14"
+                     VerticalAlignment="Center"
+                     Foreground="{ThemeResource GalleryTextPrimaryBrush}" MaxWidth="420" TextWrapping="Wrap"/>
+          <Button x:Name="ToastClose" Visibility="Collapsed" Content="&#xE711;"
+                  FontFamily="Segoe Fluent Icons" FontSize="12"
+                  MinWidth="32" MinHeight="32" Padding="0"
+                  Background="Transparent" BorderThickness="0"
+                  AutomationProperties.Name="Закрыть сообщение"/>
+        </StackPanel>
+      </Border>
+
+      <!-- Drag-over: инсет-рамка, а не заливка поверх кадра -->
+      <Border x:Name="DropHint" Visibility="Collapsed" Margin="24"
+              BorderThickness="2" BorderBrush="{ThemeResource GalleryAccentBrush}"
+              CornerRadius="12" Background="{ThemeResource GalleryDropTintBrush}" IsHitTestVisible="False">
+        <TextBlock Text="Отпустите, чтобы открыть"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   FontFamily="Segoe UI Variable Display" FontSize="20" FontWeight="SemiBold"
+                   Foreground="{ThemeResource GalleryTextPrimaryBrush}"/>
+      </Border>
+
+      <!-- Шпаргалка F1: четыре группы, ни одна не длиннее шести строк (Миллер) -->
+      <Border x:Name="CheatSheet" Visibility="Collapsed"
+              HorizontalAlignment="Center" VerticalAlignment="Center"
+              Background="{ThemeResource GallerySurfaceElevatedBrush}" CornerRadius="12" Padding="24" MaxWidth="720"
+              BorderThickness="1" BorderBrush="{ThemeResource GalleryStrokeBrush}">
+        <StackPanel Spacing="16">
+          <TextBlock Text="Горячие клавиши" FontFamily="Segoe UI Variable Display"
+                     FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource GalleryTextPrimaryBrush}"/>
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="32" RowDefinitions="Auto,Auto">
+            <StackPanel Grid.Column="0" Grid.Row="0" x:Name="CheatNav" Spacing="4"/>
+            <StackPanel Grid.Column="1" Grid.Row="0" x:Name="CheatPick" Spacing="4"/>
+            <StackPanel Grid.Column="0" Grid.Row="1" x:Name="CheatZoom" Spacing="4" Margin="0,16,0,0"/>
+            <StackPanel Grid.Column="1" Grid.Row="1" x:Name="CheatMisc" Spacing="4" Margin="0,16,0,0"/>
+          </Grid>
+          <TextBlock Text="Esc или F1 — закрыть" FontSize="12"
+                     Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+        </StackPanel>
+      </Border>
+
+      <!-- Настройки: выдвигаются справа поверх изображения, НЕ модальное окно.
+           Без кнопок ОК/Отмена — изменения применяются сразу (§9.1) -->
+      <Border x:Name="SettingsPanel" Visibility="Collapsed"
+              HorizontalAlignment="Right" VerticalAlignment="Stretch" Width="380"
+              Background="{ThemeResource GallerySurfaceElevatedBrush}" BorderThickness="1,0,0,0" BorderBrush="{ThemeResource GalleryStrokeBrush}">
+        <ScrollViewer Padding="20">
+          <StackPanel Spacing="16">
+            <TextBlock Text="Настройки" FontFamily="Segoe UI Variable Display"
+                       FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource GalleryTextPrimaryBrush}"/>
+            <TextBlock Text="ЦЕЛЕВЫЕ ПАПКИ" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{ThemeResource GalleryTextTertiaryBrush}" CharacterSpacing="60"/>
+            <StackPanel x:Name="SlotRows" Spacing="6"/>
+            <TextBlock Text="ТЕМА" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{ThemeResource GalleryTextTertiaryBrush}" CharacterSpacing="60"/>
+            <ComboBox x:Name="ThemeBox" HorizontalAlignment="Stretch" MinHeight="32"
+                      AutomationProperties.Name="Тема оформления">
+              <ComboBoxItem Content="Тёмная"/>
+              <ComboBoxItem Content="Светлая"/>
+              <ComboBoxItem Content="Как в системе"/>
+            </ComboBox>
+            <TextBlock Text="ПЕРЕВОД" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{ThemeResource GalleryTextTertiaryBrush}" CharacterSpacing="60"/>
+            <ComboBox x:Name="TransBackendBox" HorizontalAlignment="Stretch" MinHeight="32"
+                      Header="Чем переводить"
+                      AutomationProperties.Name="Способ перевода">
+              <ComboBoxItem Content="На этом компьютере"/>
+              <ComboBoxItem Content="Через API"/>
+            </ComboBox>
+            <StackPanel x:Name="ApiRows" Spacing="8" Visibility="Collapsed">
+              <TextBox x:Name="ApiUrlBox" Header="Адрес (совместимый с OpenAI)"
+                       PlaceholderText="https://api.openai.com/v1/chat/completions"/>
+              <TextBox x:Name="ApiModelBox" Header="Модель" PlaceholderText="gpt-4o-mini"/>
+              <PasswordBox x:Name="ApiKeyBox" Header="Ключ"
+                           PlaceholderText="вставьте ключ и нажмите «Сохранить»"/>
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <Button x:Name="ApiKeySave" Grid.Column="0" Content="Сохранить ключ"
+                        MinHeight="32" HorizontalAlignment="Stretch"/>
+                <Button x:Name="ApiKeyClear" Grid.Column="1" Content="Забыть ключ"
+                        MinHeight="32" HorizontalAlignment="Stretch"/>
+              </Grid>
+              <CheckBox x:Name="ChkSendImage" Content="Отправлять саму страницу"/>
+              <TextBlock TextWrapping="Wrap" FontSize="12"
+                         Foreground="{ThemeResource GalleryTextTertiaryBrush}"
+                         Text="Модель увидит картинку и прочтёт то, что распознавание пропустило: звуки, вывески, текст по дуге. Дороже, и изображение покидает компьютер."/>
+              <TextBlock x:Name="ApiKeyState" FontSize="12" TextWrapping="Wrap"
+                         Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+              <TextBlock TextWrapping="Wrap" FontSize="12"
+                         Foreground="{ThemeResource GalleryTextTertiaryBrush}"
+                         Text="Страница уходит одним запросом — модель видит весь диалог сразу и согласует род и обращение. Текст покидает этот компьютер."/>
+            </StackPanel>
+
+            <TextBlock Text="ЛЕНТА МИНИАТЮР" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{ThemeResource GalleryTextTertiaryBrush}" CharacterSpacing="60"/>
+            <CheckBox x:Name="ChkStrip" Content="Показывать ленту (T или F4)"/>
+            <ComboBox x:Name="StripSideBox" HorizontalAlignment="Stretch" MinHeight="32"
+                      Header="Положение" AutomationProperties.Name="Положение ленты миниатюр">
+              <ComboBoxItem Content="Снизу"/>
+              <ComboBoxItem Content="Справа"/>
+            </ComboBox>
+            <Slider x:Name="StripAlpha" Minimum="25" Maximum="100" StepFrequency="5"
+                    TickFrequency="25" SnapsTo="StepValues"
+                    HorizontalAlignment="Stretch"
+                    Header="Непрозрачность"
+                    AutomationProperties.Name="Непрозрачность ленты миниатюр"/>
+            <CheckBox x:Name="ChkAdvance" Content="После копирования — следующий кадр"/>
+            <CheckBox x:Name="ChkSpaceNext" Content="Пробел листает, а не откладывает"/>
+            <HyperlinkButton x:Name="OpenSettingsFile" Content="Открыть settings.json"
+                             Padding="0"/>
+            <TextBlock Text="Esc — закрыть" FontSize="12"
+                       Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+
+      <!-- Чей перевод на экране. Серым и мелким: это подпись, а не сообщение,
+           но она обязана быть видна без нажатий — иначе источник приходится
+           угадывать по качеству текста (§4.11) -->
+      <TextBlock x:Name="TransSource" Visibility="Collapsed"
+                 HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,12,0,0"
+                 FontFamily="Segoe UI Variable Text" FontSize="12"
+                 IsHitTestVisible="False"
+                 Foreground="{ThemeResource GalleryTextTertiaryBrush}"/>
+
+      <!-- Журнал обращений к API: что ушло и что вернулось (§4.11) -->
+      <Border x:Name="ApiLogPanel" Visibility="Collapsed"
+              HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="40"
+              Background="{ThemeResource GallerySurfaceElevatedBrush}" CornerRadius="12"
+              BorderThickness="1" BorderBrush="{ThemeResource GalleryStrokeBrush}">
+        <Grid RowDefinitions="Auto,*,Auto" Padding="20,16">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="Запросы к API"
+                       FontFamily="Segoe UI Variable Display" FontSize="20" FontWeight="SemiBold"
+                       VerticalAlignment="Center"
+                       Foreground="{ThemeResource GalleryTextPrimaryBrush}"/>
+            <Button x:Name="ApiLogCopy" Grid.Column="1" Content="Копировать" MinHeight="32"/>
+            <Button x:Name="ApiLogClear" Grid.Column="2" Content="Очистить" MinHeight="32"/>
+          </Grid>
+          <ScrollViewer Grid.Row="1" Margin="0,12,0,8" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="ApiLogRows" Spacing="14"/>
+          </ScrollViewer>
+          <TextBlock Grid.Row="2" FontSize="12" TextWrapping="Wrap"
+                     Foreground="{ThemeResource GalleryTextSecondaryBrush}"
+                     Text="F3 или Esc — закрыть. Ключ сюда не попадает: он уходит заголовком, а записывается только тело запроса."/>
+        </Grid>
+      </Border>
+
+      <!-- Очистка страницы от текста: три шага и кисть (§4.14) -->
+      <Border x:Name="CleanPanel" Visibility="Collapsed"
+              HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="24"
+              Background="{ThemeResource GallerySurfaceElevatedBrush}" CornerRadius="12"
+              BorderThickness="1" BorderBrush="{ThemeResource GalleryStrokeBrush}">
+        <Grid RowDefinitions="Auto,*,Auto" Padding="16,12">
+
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="Очистка от текста"
+                       FontFamily="Segoe UI Variable Display" FontSize="20" FontWeight="SemiBold"
+                       VerticalAlignment="Center"
+                       Foreground="{ThemeResource GalleryTextPrimaryBrush}"/>
+            <Button x:Name="CleanClose" Grid.Column="1" Content="Закрыть" MinHeight="32"/>
+          </Grid>
+
+          <Grid Grid.Row="1" ColumnDefinitions="*,248" ColumnSpacing="12" Margin="0,10,0,8">
+
+            <!-- Кадр и поверх него разметка. Два слоя, а не один сведённый:
+                 мазок кистью тогда перерисовывает только разметку, и рука
+                 не упирается в пересборку кадра на каждое движение.
+                 ScrollViewer, а не Viewbox: он даёт увеличение и прокрутку
+                 даром, а координаты указателя внутри остаются в пикселях
+                 КАДРА при любом масштабе — кисть от этого не зависит -->
+            <Border Grid.Column="0" Background="{ThemeResource GalleryTransparencyBrush}"
+                    CornerRadius="8" Padding="4">
+              <Grid>
+                <ScrollViewer x:Name="CleanScroll"
+                              ZoomMode="Enabled" MinZoomFactor="0.1" MaxZoomFactor="12"
+                              HorizontalScrollMode="Enabled" VerticalScrollMode="Enabled"
+                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                  <Grid x:Name="CleanStack" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Image x:Name="CleanBase" Stretch="None"/>
+                    <Image x:Name="CleanOver" Stretch="None" IsHitTestVisible="False"/>
+                  </Grid>
+                </ScrollViewer>
+
+                <!-- Идёт работа. Дорисовка занимает секунды, и без этого
+                     непонятно, думает она или уже всё -->
+                <ProgressRing x:Name="CleanBusyRing" IsActive="False" Visibility="Collapsed"
+                              Width="34" Height="34" Margin="14"
+                              HorizontalAlignment="Left" VerticalAlignment="Top"/>
+
+                <!-- Круг кисти. Не внутри прокрутки: там обводка тянулась бы
+                     вместе с кадром и на 12x стала бы полосой. Белый под
+                     тёмным — чтобы читался и на светлой странице, и на чёрной -->
+                <Grid x:Name="CleanCursor" Visibility="Collapsed" IsHitTestVisible="False"
+                      HorizontalAlignment="Left" VerticalAlignment="Top">
+                  <Ellipse Stroke="#C0FFFFFF" StrokeThickness="3"/>
+                  <Ellipse Stroke="#E0101010" StrokeThickness="1"/>
+                </Grid>
+              </Grid>
+            </Border>
+
+            <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+              <StackPanel Spacing="8">
+                <Button x:Name="CleanAll" Content="Сделать всё" HorizontalAlignment="Stretch"
+                        MinHeight="36" Style="{ThemeResource AccentButtonStyle}"/>
+
+                <TextBlock Text="ВСЯ СТРАНИЦА" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,0"
+                           Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+                <Button x:Name="CleanStep1" Content="1. Найти текст" HorizontalAlignment="Stretch" MinHeight="34"/>
+                <Button x:Name="CleanStep2" Content="2. Разметить буквы" HorizontalAlignment="Stretch" MinHeight="34"/>
+                <Button x:Name="CleanStep3" Content="3. Дорисовать" HorizontalAlignment="Stretch" MinHeight="34"/>
+                <Button x:Name="CleanDropAll" Content="Убрать все рамки (4)" HorizontalAlignment="Stretch" MinHeight="32"/>
+
+                <TextBlock x:Name="CleanStatus" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"
+                           Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+
+                <TextBlock Text="РАЗМЕТКА &#183; Q W E" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,0"
+                           Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
+                  <ToggleButton x:Name="CleanToolBox" Grid.Column="0" Content="Рамка"
+                                HorizontalAlignment="Stretch" MinHeight="32" IsChecked="True"/>
+                  <ToggleButton x:Name="CleanBrush" Grid.Column="1" Content="Кисть"
+                                HorizontalAlignment="Stretch" MinHeight="32"/>
+                  <ToggleButton x:Name="CleanEraser" Grid.Column="2" Content="Ластик"
+                                HorizontalAlignment="Stretch" MinHeight="32"/>
+                </Grid>
+
+                <!-- Рисование по кадру. Отдельным разделом: разметка говорит
+                     «что стереть», а это уже правка самих пикселей -->
+                <TextBlock Text="РИСОВАНИЕ &#183; Z X C V B" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,0"
+                           Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto"
+                      ColumnSpacing="4" RowSpacing="4">
+                  <ToggleButton x:Name="CleanPick" Grid.Row="0" Grid.Column="0" Content="Пипетка"
+                                HorizontalAlignment="Stretch" MinHeight="32"/>
+                  <ToggleButton x:Name="CleanPencil" Grid.Row="0" Grid.Column="1" Content="Карандаш"
+                                HorizontalAlignment="Stretch" MinHeight="32"/>
+                  <ToggleButton x:Name="CleanLine" Grid.Row="1" Grid.Column="0" Content="Линия"
+                                HorizontalAlignment="Stretch" MinHeight="32"/>
+                  <ToggleButton x:Name="CleanRect" Grid.Row="1" Grid.Column="1" Content="Квадрат"
+                                HorizontalAlignment="Stretch" MinHeight="32"/>
+                  <ToggleButton x:Name="CleanOval" Grid.Row="2" Grid.Column="0" Content="Круг"
+                                HorizontalAlignment="Stretch" MinHeight="32"/>
+                  <Border Grid.Row="2" Grid.Column="1" CornerRadius="4" MinHeight="32"
+                          BorderThickness="1" BorderBrush="{ThemeResource GalleryTextSecondaryBrush}">
+                    <Grid>
+                      <Rectangle x:Name="CleanInk" Margin="6"/>
+                      <TextBlock x:Name="CleanInkText" FontSize="11" HorizontalAlignment="Center"
+                                 VerticalAlignment="Center"/>
+                    </Grid>
+                  </Border>
+                </Grid>
+                <TextBlock x:Name="CleanSizeLabel" FontSize="12"
+                           Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+                <Slider x:Name="CleanSize" Minimum="2" Maximum="60" Value="10"
+                        HorizontalAlignment="Stretch"/>
+
+                <TextBlock Text="ВЫБРАННЫЙ БЛОК" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,0"
+                           Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+                <TextBlock x:Name="CleanBlockInfo" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+                <Button x:Name="CleanBlockMark" Content="Разметить блок (A)" HorizontalAlignment="Stretch" MinHeight="32"/>
+                <Button x:Name="CleanBlockErase" Content="Дорисовать блок (S)" HorizontalAlignment="Stretch" MinHeight="32"/>
+                <Button x:Name="CleanSmooth" Content="Залить градиентом (G)" HorizontalAlignment="Stretch" MinHeight="32"/>
+                <Button x:Name="CleanBlockDrop" Content="Убрать рамку (D или Delete)" HorizontalAlignment="Stretch" MinHeight="32"/>
+                <Button x:Name="CleanWipe" Content="Убрать разметку (F)" HorizontalAlignment="Stretch" MinHeight="32"/>
+
+                <Button x:Name="CleanUndo" Content="Отменить последнее" HorizontalAlignment="Stretch"
+                        MinHeight="34" Margin="0,8,0,0"/>
+
+                <TextBlock Text="ВИД" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,0"
+                           Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                  <Button x:Name="CleanFit" Grid.Column="0" Content="Вписать"
+                          HorizontalAlignment="Stretch" MinHeight="32"/>
+                  <Button x:Name="CleanActual" Grid.Column="1" Content="1:1"
+                          HorizontalAlignment="Stretch" MinHeight="32"/>
+                </Grid>
+
+                <TextBlock Text="РЕЗУЛЬТАТ" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,0"
+                           Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+                <Button x:Name="CleanSave" Content="Сохранить рядом (Ctrl+S)" HorizontalAlignment="Stretch" MinHeight="34"/>
+                <Button x:Name="CleanReset" Content="Начать заново" HorizontalAlignment="Stretch" MinHeight="32"/>
+              </StackPanel>
+            </ScrollViewer>
+          </Grid>
+
+          <TextBlock Grid.Row="2" FontSize="12" TextWrapping="Wrap"
+                     Foreground="{ThemeResource GalleryTextSecondaryBrush}"
+                     Text="F8 или Esc — закрыть. Вся страница: 1 — найти текст, 2 — разметить буквы, 3 — дорисовать, 4 — убрать все рамки. Разметка: Q — рамка, W — кисть, E — ластик. Рисование по кадру: Z — пипетка (взять цвет), X — карандаш, C — линия, V — квадрат, B — круг; цвет берётся пипеткой из самого кадра, край мазка смягчён. Действия над блоком: A — разметить, S — дорисовать, G — залить градиентом (для гладкого фона), D (или Delete) — убрать рамку, F — убрать разметку, F1 — исходник, пока держите. Y или Ctrl+Z — отменить (при выбранном блоке отменяется только он), Ctrl+Shift+Z — вернуть. Ctrl+S — сохранить рядом, Ctrl+Shift+S — перезаписать оригинал. Мышь: колесо — увеличение, Ctrl+колесо — размер кисти или пера, левая кнопка тянет кадр, двойной щелчок ею — вписать, правая работает выбранным инструментом. Края и углы выбранной рамки тянутся — меняют её размер. Розовым показано, что будет стёрто: смотрите ДО дорисовки, после сравнивать будет не с чем."/>
+        </Grid>
+      </Border>
+
+      <!-- Недавние папки: память по папкам была всегда, но невидима (§4.6.2) -->
+      <Border x:Name="HistoryPanel" Visibility="Collapsed"
+              HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="40"
+              Background="{ThemeResource GallerySurfaceElevatedBrush}" CornerRadius="12"
+              BorderThickness="1" BorderBrush="{ThemeResource GalleryStrokeBrush}">
+        <Grid RowDefinitions="Auto,Auto,*,Auto" Padding="20,16">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="Недавние папки"
+                       FontFamily="Segoe UI Variable Display" FontSize="20" FontWeight="SemiBold"
+                       VerticalAlignment="Center"
+                       Foreground="{ThemeResource GalleryTextPrimaryBrush}"/>
+            <Button x:Name="HistoryClose" Grid.Column="1" Content="Закрыть" MinHeight="32"/>
+          </Grid>
+          <TextBlock x:Name="HistoryNote" Grid.Row="1" Visibility="Collapsed"
+                     Margin="0,8,0,0" FontSize="12"
+                     Foreground="{ThemeResource GalleryTextSecondaryBrush}"/>
+          <ScrollViewer Grid.Row="2" Margin="0,12,0,8" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="HistoryRows" Spacing="6"/>
+          </ScrollViewer>
+          <TextBlock Grid.Row="3" FontSize="12" TextWrapping="Wrap"
+                     Foreground="{ThemeResource GalleryTextSecondaryBrush}"
+                     Text="Двойной щелчок или Enter — открыть папку на том кадре, где вы её оставили. F7 или Esc — закрыть. «Удалить» убирает строку из списка, файлы на диске не трогаются."/>
+        </Grid>
+      </Border>
+
+      <!-- Отладочный оверлей F12: пять счётчиков, не двадцать (§6.9) -->
+      <Border x:Name="Overlay" Visibility="Collapsed"
+              HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12"
+              Background="{ThemeResource GalleryOverlayBrush}" CornerRadius="8" Padding="12,8">
+        <TextBlock x:Name="OverlayText" FontFamily="Consolas" FontSize="12"
+                   Foreground="{ThemeResource GalleryAccentBrush}" IsTextSelectionEnabled="False"/>
+      </Border>
+    </Grid>
+
+    <!-- Статус-бар -->
+    <Border x:Name="StatusBar" Grid.Row="2" Background="{ThemeResource GallerySurfaceBrush}" Padding="16,8"
+            BorderThickness="0,1,0,0" BorderBrush="{ThemeResource GalleryStrokeBrush}">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="16">
+        <Grid Grid.Column="0" VerticalAlignment="Center">
+          <Button x:Name="CounterButton" Padding="6,2" MinHeight="28"
+                  Background="Transparent" BorderThickness="0"
+                  AutomationProperties.Name="Перейти к изображению по номеру">
+            <TextBlock x:Name="Counter"
+                       FontFamily="Segoe UI Variable Text" FontSize="12"
+                       Foreground="{ThemeResource GalleryTextPrimaryBrush}" FontWeight="SemiBold"
+                       Text="—"/>
+          </Button>
+          <!-- Инлайн-поле, а не модальный диалог: горячий путь не прерывается (§4.6) -->
+          <TextBox x:Name="GotoBox" Visibility="Collapsed"
+                   Width="96" MinHeight="28" FontSize="12" Padding="6,2"
+                   PlaceholderText="номер"
+                   AutomationProperties.Name="Номер изображения"/>
+        </Grid>
+        <StackPanel x:Name="SlotBar" Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                    VerticalAlignment="Center"/>
+        <TextBlock x:Name="FileNameText" Grid.Column="2"
+                   FontFamily="Segoe UI Variable Text" FontSize="12"
+                   Foreground="{ThemeResource GalleryTextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+        <TextBlock x:Name="ZoomPct" Grid.Column="3"
+                   FontFamily="Segoe UI Variable Text" FontSize="12"
+                   Foreground="{ThemeResource GalleryTextSecondaryBrush}" MinWidth="44" TextAlignment="Right"/>
+        <!-- Размер кадра, под ним — папка, из которой он показан. Кнопка, а не
+             просто текст: строка кликабельна и открывает папку в Проводнике.
+             Прозрачная кнопка, как у счётчика слева, — второго стиля для
+             одного и того же жеста в одной полосе заводить незачем -->
+        <StackPanel Grid.Column="4" VerticalAlignment="Center"
+                    HorizontalAlignment="Right" Spacing="1">
+          <TextBlock x:Name="Meta" HorizontalAlignment="Right"
+                     FontFamily="Segoe UI Variable Text" FontSize="12"
+                     Foreground="{ThemeResource GalleryTextTertiaryBrush}"/>
+          <Button x:Name="FolderButton" Visibility="Collapsed"
+                  HorizontalAlignment="Right" Padding="4,1" MinHeight="0" MinWidth="0"
+                  Background="Transparent" BorderThickness="0"
+                  AutomationProperties.Name="Открыть папку в Проводнике">
+            <TextBlock x:Name="FolderText"
+                       FontFamily="Segoe UI Variable Text" FontSize="11"
+                       Foreground="{ThemeResource GalleryTextTertiaryBrush}"/>
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Хайрлайн позиции: единственный неисчезающий элемент интерфейса -->
+    <Rectangle x:Name="PositionRail" Grid.Row="2" VerticalAlignment="Top"
+               Height="2" HorizontalAlignment="Left" Width="0"
+               Fill="{ThemeResource GalleryRailBrush}"/>
+
+    <Grid.KeyboardAccelerators>
+      <KeyboardAccelerator Key="Right" Invoked="OnNext"/>
+      <KeyboardAccelerator Key="Down"  Invoked="OnNext"/>
+      <KeyboardAccelerator Key="Left"  Invoked="OnPrev"/>
+      <KeyboardAccelerator Key="Up"    Invoked="OnPrev"/>
+      <KeyboardAccelerator Key="PageDown" Invoked="OnNext"/>
+      <KeyboardAccelerator Key="PageUp"   Invoked="OnPrev"/>
+      <KeyboardAccelerator Key="Home"  Invoked="OnFirst"/>
+      <KeyboardAccelerator Key="End"   Invoked="OnLast"/>
+      <KeyboardAccelerator Key="T"     Invoked="OnToggleStrip"/>
+      <KeyboardAccelerator Key="F2"    Invoked="OnToggleTranslate"/>
+      <KeyboardAccelerator Key="F3"    Invoked="OnToggleApiLog"/>
+      <KeyboardAccelerator Key="F4"    Invoked="OnToggleOcr"/>
+      <KeyboardAccelerator Key="F6"    Invoked="OnToggleStrip"/>
+      <KeyboardAccelerator Key="F5"    Invoked="OnRescan"/>
+      <KeyboardAccelerator Key="F7"    Invoked="OnToggleHistory"/>
+      <KeyboardAccelerator Key="F8"    Invoked="OnToggleClean"/>
+      <KeyboardAccelerator Key="F12"   Invoked="OnToggleOverlay"/>
+
+      <!-- Зум. Цифра 1 занята слотом копирования, поэтому 1:1 — это A (Actual) -->
+      <KeyboardAccelerator Key="F"      Invoked="OnFit"/>
+      <KeyboardAccelerator Key="A"      Invoked="OnActual"/>
+      <KeyboardAccelerator Key="Add"    Invoked="OnZoomIn"/>
+      <KeyboardAccelerator Key="Subtract" Invoked="OnZoomOut"/>
+      <KeyboardAccelerator Key="Escape" Invoked="OnEscape"/>
+      <KeyboardAccelerator Key="F11" Invoked="OnFullScreen"/>
+      <KeyboardAccelerator Key="F1"  Invoked="OnCheatSheet"/>
+      <KeyboardAccelerator Key="Back" Invoked="OnPrev"/>
+
+      <!-- Панорамирование с клавиатуры: доступность без мыши -->
+    </Grid.KeyboardAccelerators>
+
+  </Grid>
+</Window>

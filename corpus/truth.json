@@ -1,0 +1,206 @@
+[
+ {
+  "file": "p01_bangers_19px_q72.jpg",
+  "font": "bangers",
+  "px": 19,
+  "quality": 72,
+  "blur": 0,
+  "truth": [
+   "WHAT HAPPENS IF I DO?",
+   "AHH, GEEZE YOU SCARED ME...",
+   "WHY AM I ALWAYS THE ONLY ONE ON TIME...",
+   "SORRY I'M LATE!",
+   "Y-YEAH... RIGHT...",
+   "THEY WERE LATE LAST TIME TOO",
+   "WHERE'S TWI AND SIS?",
+   "OH WELL, MORE BEACH FOR US I GUESS~"
+  ]
+ },
+ {
+  "file": "p02_bangers_24px_q85.jpg",
+  "font": "bangers",
+  "px": 24,
+  "quality": 85,
+  "blur": 0,
+  "truth": [
+   "AHH, GEEZE YOU SCARED ME...",
+   "SORRY I'M LATE!",
+   "HEY SHINEY~!!!",
+   "DON'T TOUCH THAT!",
+   "Y-YEAH... RIGHT...",
+   "OH WELL, MORE BEACH FOR US I GUESS~",
+   "THEY WERE LATE LAST TIME TOO",
+   "WHAT HAPPENS IF I DO?"
+  ]
+ },
+ {
+  "file": "p03_bangers_17px_q55.jpg",
+  "font": "bangers",
+  "px": 17,
+  "quality": 55,
+  "blur": 0.5,
+  "truth": [
+   "WHAT HAPPENS IF I DO?",
+   "DON'T TOUCH THAT!",
+   "WHERE'S TWI AND SIS?",
+   "SORRY I'M LATE!",
+   "AHH, GEEZE YOU SCARED ME...",
+   "OH WELL, MORE BEACH FOR US I GUESS~",
+   "Y-YEAH... RIGHT...",
+   "WHY AM I ALWAYS THE ONLY ONE ON TIME..."
+  ]
+ },
+ {
+  "file": "p04_neue-bi_19px_q72.jpg",
+  "font": "neue-bi",
+  "px": 19,
+  "quality": 72,
+  "blur": 0,
+  "truth": [
+   "DON'T TOUCH THAT!",
+   "Y-YEAH... RIGHT...",
+   "OH WELL, MORE BEACH FOR US I GUESS~",
+   "SORRY I'M LATE!",
+   "AHH, GEEZE YOU SCARED ME...",
+   "WHAT HAPPENS IF I DO?",
+   "WHERE'S TWI AND SIS?",
+   "WHY AM I ALWAYS THE ONLY ONE ON TIME..."
+  ]
+ },
+ {
+  "file": "p05_neue-bi_24px_q85.jpg",
+  "font": "neue-bi",
+  "px": 24,
+  "quality": 85,
+  "blur": 0,
+  "truth": [
+   "DON'T TOUCH THAT!",
+   "WHY AM I ALWAYS THE ONLY ONE ON TIME...",
+   "THEY WERE LATE LAST TIME TOO",
+   "SORRY I'M LATE!",
+   "Y-YEAH... RIGHT...",
+   "AHH, GEEZE YOU SCARED ME...",
+   "WHERE'S TWI AND SIS?",
+   "WHAT HAPPENS IF I DO?"
+  ]
+ },
+ {
+  "file": "p06_neue-bi_17px_q55.jpg",
+  "font": "neue-bi",
+  "px": 17,
+  "quality": 55,
+  "blur": 0.5,
+  "truth": [
+   "DON'T TOUCH THAT!",
+   "Y-YEAH... RIGHT...",
+   "AHH, GEEZE YOU SCARED ME...",
+   "WHAT HAPPENS IF I DO?",
+   "THEY WERE LATE LAST TIME TOO",
+   "WHERE'S TWI AND SIS?",
+   "HEY SHINEY~!!!",
+   "WHY AM I ALWAYS THE ONLY ONE ON TIME..."
+  ]
+ },
+ {
+  "file": "p07_inkfree_19px_q72.jpg",
+  "font": "inkfree",
+  "px": 19,
+  "quality": 72,
+  "blur": 0,
+  "truth": [
+   "WHY AM I ALWAYS THE ONLY ONE ON TIME...",
+   "WHERE'S TWI AND SIS?",
+   "THEY WERE LATE LAST TIME TOO",
+   "SORRY I'M LATE!",
+   "AHH, GEEZE YOU SCARED ME...",
+   "HEY SHINEY~!!!",
+   "Y-YEAH... RIGHT...",
+   "WHAT HAPPENS IF I DO?"
+  ]
+ },
+ {
+  "file": "p08_inkfree_24px_q85.jpg",
+  "font": "inkfree",
+  "px": 24,
+  "quality": 85,
+  "blur": 0,
+  "truth": [
+   "WHY AM I ALWAYS THE ONLY ONE ON TIME...",
+   "DON'T TOUCH THAT!",
+   "SORRY I'M LATE!",
+   "THEY WERE LATE LAST TIME TOO",
+   "WHAT HAPPENS IF I DO?",
+   "WHERE'S TWI AND SIS?",
+   "HEY SHINEY~!!!",
+   "AHH, GEEZE YOU SCARED ME..."
+  ]
+ },
+ {
+  "file": "p09_inkfree_17px_q55.jpg",
+  "font": "inkfree",
+  "px": 17,
+  "quality": 55,
+  "blur": 0.5,
+  "truth": [
+   "HEY SHINEY~!!!",
+   "WHERE'S TWI AND SIS?",
+   "WHAT HAPPENS IF I DO?",
+   "DON'T TOUCH THAT!",
+   "AHH, GEEZE YOU SCARED ME...",
+   "WHY AM I ALWAYS THE ONLY ONE ON TIME...",
+   "OH WELL, MORE BEACH FOR US I GUESS~",
+   "SORRY I'M LATE!"
+  ]
+ },
+ {
+  "file": "p10_comic-z_19px_q72.jpg",
+  "font": "comic-z",
+  "px": 19,
+  "quality": 72,
+  "blur": 0,
+  "truth": [
+   "WHY AM I ALWAYS THE ONLY ONE ON TIME...",
+   "AHH, GEEZE YOU SCARED ME...",
+   "DON'T TOUCH THAT!",
+   "WHAT HAPPENS IF I DO?",
+   "OH WELL, MORE BEACH FOR US I GUESS~",
+   "Y-YEAH... RIGHT...",
+   "WHERE'S TWI AND SIS?",
+   "HEY SHINEY~!!!"
+  ]
+ },
+ {
+  "file": "p11_comic-z_24px_q85.jpg",
+  "font": "comic-z",
+  "px": 24,
+  "quality": 85,
+  "blur": 0,
+  "truth": [
+   "SORRY I'M LATE!",
+   "HEY SHINEY~!!!",
+   "WHERE'S TWI AND SIS?",
+   "OH WELL, MORE BEACH FOR US I GUESS~",
+   "Y-YEAH... RIGHT...",
+   "DON'T TOUCH THAT!",
+   "WHAT HAPPENS IF I DO?",
+   "AHH, GEEZE YOU SCARED ME..."
+  ]
+ },
+ {
+  "file": "p12_comic-z_17px_q55.jpg",
+  "font": "comic-z",
+  "px": 17,
+  "quality": 55,
+  "blur": 0.5,
+  "truth": [
+   "OH WELL, MORE BEACH FOR US I GUESS~",
+   "DON'T TOUCH THAT!",
+   "WHAT HAPPENS IF I DO?",
+   "HEY SHINEY~!!!",
+   "WHERE'S TWI AND SIS?",
+   "SORRY I'M LATE!",
+   "AHH, GEEZE YOU SCARED ME...",
+   "WHY AM I ALWAYS THE ONLY ONE ON TIME..."
+  ]
+ }
+]

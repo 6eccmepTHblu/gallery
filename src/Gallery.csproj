@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <RootNamespace>Gallery</RootNamespace>
+    <AssemblyName>gallery</AssemblyName>
+    <UseWinUI>true</UseWinUI>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+
+    <!-- unpackaged self-contained: рантайм WinAppSDK едет внутри, бутстрапер не нужен -->
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>true</SelfContained>
+    <EnableMsixTooling>true</EnableMsixTooling>
+
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- компонентные пакеты, а НЕ meta-пакет Microsoft.WindowsAppSDK: тот тянет
+         onnxruntime.dll + DirectML.dll как довесок, вслепую. Ниже ONNX Runtime
+         подключён явно и по делу — под локальный перевод страниц (§4.9) -->
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.3.6" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.3.9" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.1.6" />
+
+    <!-- Локальный перевод: модель Marian en-ru исполняется на CPU.
+         Сами веса (425 МБ) в поставку НЕ входят — качаются по требованию
+         в %LocalAppData%\Gallery\models, иначе приложение распухло бы в тысячу раз -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.29.0" />
+    <PackageReference Include="RapidOcrNet" Version="4.2.0" />
+
+    <!-- Шифрование ключа API на учётную запись Windows (§4.9) -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Детектор облаков текста едет В ПОСТАВКЕ, в отличие от весов перевода:
+         11 МБ против 425, качать по требованию нечего, а без него распознавание
+         снова начнёт терять пузыри целиком (§4.9) -->
+    <None Include="models\comic-bubbles.onnx" Link="models\comic-bubbles.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+
+    <!-- Очистка от текста (§4.14): разметка букв и дорисовка под ними.
+         Вместе 263 МБ — больше, чем всё остальное приложение. Качать по
+         требованию нельзя: без них кнопка чистки просто не работает, а
+         объяснять это посреди чтения тома незачем -->
+    <None Include="models\comic-text-mask.onnx" Link="models\comic-text-mask.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="models\lama-manga.onnx" Link="models\lama-manga.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
