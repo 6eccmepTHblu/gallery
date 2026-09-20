@@ -259,7 +259,7 @@
 
             <TextBlock Text="ЛЕНТА МИНИАТЮР" FontSize="11" FontWeight="SemiBold"
                        Foreground="{ThemeResource GalleryTextTertiaryBrush}" CharacterSpacing="60"/>
-            <CheckBox x:Name="ChkStrip" Content="Показывать ленту (T или F4)"/>
+            <CheckBox x:Name="ChkStrip" Content="Показывать ленту (T или F6)"/>
             <ComboBox x:Name="StripSideBox" HorizontalAlignment="Stretch" MinHeight="32"
                       Header="Положение" AutomationProperties.Name="Положение ленты миниатюр">
               <ComboBoxItem Content="Снизу"/>
