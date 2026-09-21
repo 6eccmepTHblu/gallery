@@ -487,6 +487,25 @@ static class Checks
         Eq(FolderList.Fence(new[] { here.ToUpperInvariant() }, here).Count, 0, "регистр пути не важен");
 
         Log.AppendLine();
+        Log.AppendLine("FolderList.Home");
+
+        // Ради чего: открыли том, дошли до кадра в главе, закрыли — запуск
+        // обязан вернуть в ТОМ, а не в главу
+        Eq(FolderList.Home(@"D:\том\ch2\p05.jpg", @"D:\том"), @"D:\том", "вернулись в том, а не в главу");
+        Eq(FolderList.Home(@"D:\том\p01.jpg", @"D:\том"), @"D:\том", "кадр прямо в открытой папке");
+        Eq(FolderList.Home(@"D:\том\ch2\p05.jpg", null), @"D:\том\ch2", "без памяти — папка кадра");
+
+        // Кадр не из открытой папки: настройки могли устареть, файл — переехать
+        Eq(FolderList.Home(@"D:\другое\p.jpg", @"D:\том"), @"D:\другое", "чужой кадр — своя папка");
+
+        // Ловушка сравнения начал строк: «D:\ab» начинается с «D:\a»
+        Eq(FolderList.Home(@"D:\ab\p.jpg", @"D:\a"), @"D:\ab", "соседка с похожим именем не считается родителем");
+
+        Eq(FolderList.Home(@"D:\том\ch2\p.jpg", @"D:\том\"), @"D:\том", "хвостовой разделитель не мешает");
+        Eq(FolderList.Home(@"D:\p.jpg", @"D:\"), @"D:\", "корень диска — тоже папка");
+        Eq(FolderList.Home(@"D:\ТОМ\ch2\p.jpg", @"d:\том"), @"d:\том", "регистр пути не важен");
+
+        Log.AppendLine();
         Log.AppendLine("FolderList: подпапки");
 
         static Entry E(string p) => new(p, 0, default);

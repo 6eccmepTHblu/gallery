@@ -35,6 +35,14 @@ sealed class Settings
     public List<string> FolderOrder { get; set; } = new();
     public string? LastPath { get; set; }
 
+    /// <summary>
+    /// Папка, которую ОТКРЫВАЛИ, — корень обхода, а не папка последнего кадра.
+    /// Без неё запуск без аргументов возвращал в главу тома вместо тома:
+    /// восстанавливался он по родителю файла, а тот у рекурсивного обхода
+    /// сплошь и рядом не тот, что открывали.
+    /// </summary>
+    public string? LastFolder { get; set; }
+
     /// <summary>Лента миниатюр: видимость и непрозрачность в процентах (§4.8).</summary>
     public bool StripVisible { get; set; } = true;
     public int StripOpacity { get; set; } = 90;

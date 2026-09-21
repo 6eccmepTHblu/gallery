@@ -126,6 +126,35 @@ sealed class FolderList
         return (items, null);
     }
 
+    /// <summary>
+    /// Куда возвращаться при запуске без аргументов: папка, которую ОТКРЫВАЛИ,
+    /// если кадр лежит под ней, иначе папка самого кадра.
+    ///
+    /// Разница видна только на томе, разложенном по главам. Открыли том, дошли
+    /// до кадра в «ch2», закрыли — и запуск возвращал в «ch2», потеряв
+    /// остальные главы. Человек открывал том, а не главу.
+    ///
+    /// Родство проверяется подъёмом по родителям, а не сравнением начал строк:
+    /// «D:\ab» начинается с «D:\a», но вложенной в неё не является.
+    /// </summary>
+    internal static string Home(string path, string? walked)
+    {
+        var own = Path.GetDirectoryName(path) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(walked)) return own;
+
+        var root = walked.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (root.Length == 0) return own;
+
+        // Корень диска остаётся с разделителем: «D:» — это не папка, а текущий
+        // каталог диска, и GetDirectoryName отдаёт именно «D:\»
+        if (root.EndsWith(':')) root += Path.DirectorySeparatorChar;
+
+        for (var dir = own; !string.IsNullOrEmpty(dir); dir = Path.GetDirectoryName(dir))
+            if (string.Equals(dir, root, StringComparison.OrdinalIgnoreCase)) return root;
+
+        return own;
+    }
+
     public void Load(string folder, IReadOnlyList<string?>? skip = null)
     {
         var (items, error) = Scan(folder, skip);

@@ -24,6 +24,13 @@ public sealed partial class MainWindow : Window
     // Источник истины — путь, индекс производен от него (SPEC.md §6.1)
     string? _currentPath;
 
+    /// <summary>
+    /// Папка, которую ОТКРЫВАЛИ. Не то же, что папка текущего кадра: обход
+    /// рекурсивный, и кадр обычно лежит в главе, а открывали том. Сюда же
+    /// человек возвращается на следующем запуске.
+    /// </summary>
+    string? _root;
+
     CancellationTokenSource? _cts;
 
     // Дебаунс 120 мс: декод стартует только для «осевшего» индекса.
@@ -111,9 +118,13 @@ public sealed partial class MainWindow : Window
         var last = SettingsStore.Current.LastPath;
         if (!string.IsNullOrEmpty(last))
         {
-            if (File.Exists(last)) { OpenFolder(Path.GetDirectoryName(last)!, last); return; }
+            // Возвращаемся в ТУ ЖЕ папку, которую открывали, а не в папку кадра:
+            // у тома, разложенного по главам, это разные вещи
+            var home = SettingsStore.Current.LastFolder;
+            var dir = Directory.Exists(home) ? FolderList.Home(last, home)
+                                             : Path.GetDirectoryName(last);
 
-            var dir = Path.GetDirectoryName(last);
+            if (File.Exists(last) && dir is not null) { OpenFolder(dir, last); return; }
             if (dir is not null && Directory.Exists(dir)) { OpenFolder(dir, null); return; }
         }
 
@@ -124,6 +135,7 @@ public sealed partial class MainWindow : Window
 
     async void OpenFolder(string folder, string? focus)
     {
+        _root = folder;
         Img.Source = null;          // Clear() освободит кэш — нельзя держать ссылку
 
         // Открыли конкретный файл — показываем его немедленно, не дожидаясь
@@ -490,7 +502,12 @@ public sealed partial class MainWindow : Window
     void SaveSession()
     {
         SettingsStore.Current.LastPath = _currentPath;
-        if (_currentPath is not null && _list.Folder is { } folder)
+
+        // Корень обхода, а не _list.Folder: пока идёт перечисление, там лежит
+        // папка одного показанного кадра — и закрывшийся в эту секунду получил
+        // бы на запуске главу вместо тома
+        if (_root is not null) SettingsStore.Current.LastFolder = _root;
+        if (_currentPath is not null && (_root ?? _list.Folder) is { } folder)
             SettingsStore.Remember(folder, _currentPath);
 
         // Пишем сразу, без секунды покоя. Оседание уже само по себе дебаунс: при
